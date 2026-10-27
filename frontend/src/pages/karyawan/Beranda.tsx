@@ -12,8 +12,6 @@ interface ScheduleResponse {
   holidays: Holiday[];
 }
 
-// Sama dengan LATE_TOLERANCE_MINUTES default di backend
-const LATE_TOLERANCE_MIN = 120;
 const toMin = (hhmm: string) => Number(hhmm.slice(0, 2)) * 60 + Number(hhmm.slice(3, 5));
 
 function countdown(mins: number) {
@@ -36,6 +34,7 @@ export default function BerandaKaryawan() {
         api.get<ScheduleResponse>(`/me/schedule?from=${today}&to=${addDays(today, 6)}`),
         api.get<Shift[]>('/shifts'),
         api.get<LeaveRequest[]>('/me/leaves'),
+        api.get<{ lateToleranceMinutes: number }>('/settings'),
       ]),
     [today],
   );
@@ -51,7 +50,8 @@ export default function BerandaKaryawan() {
     );
   }
 
-  const [recap, sched, shifts, leaves] = data;
+  const [recap, sched, shifts, leaves, settings] = data;
+  const lateTolerance = settings.lateToleranceMinutes;
   const todayRecord = recap.days.find((d) => d.date === today);
   const todayShiftRef = sched.schedules.find((s) => s.date === today)?.shift ?? null;
   const shift = todayShiftRef ? shifts.find((s) => s.id === todayShiftRef.id) : undefined;
@@ -60,7 +60,7 @@ export default function BerandaKaryawan() {
 
   const slots = (shift?.slots ?? []).map((s) => {
     const start = toMin(s.windowStart);
-    const end = toMin(s.windowEnd) + (s.type === 'MASUK' ? LATE_TOLERANCE_MIN : 0);
+    const end = toMin(s.windowEnd) + (s.type === 'MASUK' ? lateTolerance : 0);
     const done = todayRecord?.slots[s.type];
     const state = done ? 'done' : clock.minutes > end ? 'missed' : clock.minutes >= start ? 'open' : 'upcoming';
     return { ...s, start, end, done, state };

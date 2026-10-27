@@ -1,6 +1,7 @@
 import bcrypt from 'bcryptjs';
 import { env } from './config/env';
 import { GeofenceSetting, Shift, ShiftSlot, User, sequelize } from './models';
+import { loadSettings } from './services/settings';
 
 const SHIFTS = [
   {
@@ -104,4 +105,5 @@ export async function bootstrap() {
   await seedShifts();
   await seedSuperAdmin();
   await seedGeofence();
+  await loadSettings();
 }

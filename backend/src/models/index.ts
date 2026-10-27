@@ -359,7 +359,44 @@ GeofenceSetting.init(
   { sequelize, tableName: 'geofence_settings', createdAt: false },
 );
 
+// ───────────────────────────── Pengaturan sistem & riwayat perubahan shift ─────────────────────────────
+/** Pengaturan key-value yang bisa diubah Super Admin dari dashboard (mis. toleransi terlambat). */
+export class AppSetting extends Model<InferAttributes<AppSetting>, InferCreationAttributes<AppSetting>> {
+  declare key: string;
+  declare value: string;
+  declare updatedAt: CreationOptional<Date>;
+}
+AppSetting.init(
+  {
+    key: { type: DataTypes.STRING(60), primaryKey: true },
+    value: { type: DataTypes.STRING(255), allowNull: false },
+    updatedAt: DataTypes.DATE,
+  },
+  { sequelize, tableName: 'app_settings', createdAt: false },
+);
+
+export class ShiftChangeLog extends Model<InferAttributes<ShiftChangeLog>, InferCreationAttributes<ShiftChangeLog>> {
+  declare id: CreationOptional<number>;
+  declare actorId: ForeignKey<number>;
+  declare target: string; // nama shift, atau "Toleransi terlambat"
+  declare before: object;
+  declare after: object;
+  declare createdAt: CreationOptional<Date>;
+  declare actor?: NonAttribute<User>;
+}
+ShiftChangeLog.init(
+  {
+    id: { type: DataTypes.INTEGER.UNSIGNED, autoIncrement: true, primaryKey: true },
+    target: { type: DataTypes.STRING(60), allowNull: false },
+    before: { type: DataTypes.JSON, allowNull: false },
+    after: { type: DataTypes.JSON, allowNull: false },
+    createdAt: DataTypes.DATE,
+  },
+  { sequelize, tableName: 'shift_change_logs', updatedAt: false },
+);
+
 // ───────────────────────────── Relasi ─────────────────────────────
+ShiftChangeLog.belongsTo(User, { foreignKey: 'actorId', as: 'actor' });
 Shift.hasMany(ShiftSlot, { foreignKey: 'shiftId', as: 'slots' });
 ShiftSlot.belongsTo(Shift, { foreignKey: 'shiftId' });
 User.belongsTo(Shift, { foreignKey: 'defaultShiftId', as: 'defaultShift' });

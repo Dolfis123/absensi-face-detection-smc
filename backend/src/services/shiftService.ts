@@ -1,6 +1,6 @@
-import { env } from '../config/env';
 import { Shift, ShiftSlot, SlotType } from '../models';
 import { hhmmToMinutes } from '../utils/time';
+import { getLateTolerance } from './settings';
 
 export type ShiftWithSlots = Shift & { slots: ShiftSlot[] };
 
@@ -16,9 +16,46 @@ export async function loadShifts(): Promise<Map<number, ShiftWithSlots>> {
 }
 
 /** Batas akhir slot. Absen Masuk masih diterima (status TERLAMBAT) sampai toleransi habis. */
-export function slotDeadline(slot: ShiftSlot): number {
+export function slotDeadline(slot: Pick<ShiftSlot, 'type' | 'windowEnd'>, lateToleranceMin = getLateTolerance()): number {
   const end = hhmmToMinutes(slot.windowEnd);
-  return slot.type === 'MASUK' ? end + env.lateToleranceMin : end;
+  return slot.type === 'MASUK' ? end + lateToleranceMin : end;
+}
+
+export interface SlotInput {
+  type: SlotType;
+  windowStart: string;
+  windowEnd: string;
+}
+
+/**
+ * Validasi aturan jam shift. Mengembalikan pesan kesalahan pertama, atau null bila valid.
+ * Semua jam berada di hari yang sama (shift tidak melewati tengah malam).
+ */
+export function validateShiftTimes(
+  shiftName: string,
+  startTime: string,
+  endTime: string,
+  slots: SlotInput[],
+  lateToleranceMin: number,
+): string | null {
+  const m = hhmmToMinutes;
+  if (m(startTime) >= m(endTime)) return `${shiftName}: jam selesai kerja harus setelah jam mulai`;
+  for (const s of slots) {
+    if (m(s.windowStart) >= m(s.windowEnd)) return `${shiftName}: jendela Absen ${label(s.type)} harus berakhir setelah dibuka`;
+  }
+  for (let i = 1; i < slots.length; i++) {
+    const prev = slots[i - 1];
+    const cur = slots[i];
+    const prevDeadline = slotDeadline(prev, lateToleranceMin);
+    if (m(cur.windowStart) <= prevDeadline) {
+      const extra = prev.type === 'MASUK' ? ` (termasuk toleransi terlambat ${lateToleranceMin} menit)` : '';
+      return `${shiftName}: jendela Absen ${label(cur.type)} (${cur.windowStart}) harus dibuka setelah batas Absen ${label(prev.type)}${extra}`;
+    }
+  }
+  if (slotDeadline(slots[0], lateToleranceMin) >= 24 * 60) {
+    return `${shiftName}: batas terlambat Absen Masuk melewati tengah malam`;
+  }
+  return null;
 }
 
 export type SlotResolution =

@@ -11,6 +11,7 @@ import Geofence from './pages/admin/Geofence';
 import Karyawan from './pages/admin/Karyawan';
 import Koreksi from './pages/admin/Koreksi';
 import Libur from './pages/admin/Libur';
+import PengaturanShift from './pages/admin/PengaturanShift';
 import Roster from './pages/admin/Roster';
 import BerandaKaryawan from './pages/karyawan/Beranda';
 import Izin from './pages/karyawan/Izin';
@@ -74,6 +75,7 @@ export default function App() {
         <Route path="koreksi" element={<Guard roles={ADMIN}><Koreksi /></Guard>} />
         <Route path="libur" element={<Guard roles={ADMIN}><Libur /></Guard>} />
         <Route path="geofence" element={<Guard roles={ADMIN}><Geofence /></Guard>} />
+        <Route path="pengaturan-shift" element={<Guard roles={ADMIN}><PengaturanShift /></Guard>} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

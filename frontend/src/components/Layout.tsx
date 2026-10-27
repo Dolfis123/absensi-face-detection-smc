@@ -80,6 +80,7 @@ export const NAV_GROUPS: Record<Role, NavGroup[]> = {
     {
       title: 'Pengaturan & Laporan',
       items: [
+        { to: '/app/pengaturan-shift', label: 'Pengaturan Shift', icon: 'clock' },
         { to: '/app/geofence', label: 'Geofence Pos', icon: 'mapPin' },
         { to: '/app/laporan', label: 'Laporan', icon: 'download' },
       ],

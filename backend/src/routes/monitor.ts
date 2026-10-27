@@ -7,6 +7,7 @@ import { leaveUploadDir } from '../middleware/upload';
 import { AttendanceIssue, Holiday, LeaveRequest, Shift, ShiftSlot, User } from '../models';
 import { sendCsv } from '../services/csv';
 import { buildRecap } from '../services/recapService';
+import { getLateTolerance } from '../services/settings';
 import { ah, HttpError } from '../utils/http';
 import { DATE_RE, MONTH_RE, monthRange, witNow } from '../utils/time';
 
@@ -31,6 +32,10 @@ router.get(
     );
   }),
 );
+
+router.get('/settings', (_req, res) => {
+  res.json({ lateToleranceMinutes: getLateTolerance() });
+});
 
 router.get(
   '/holidays',
