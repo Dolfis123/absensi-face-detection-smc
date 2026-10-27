@@ -47,15 +47,8 @@ export interface FaceCandidate {
   embeddings: number[][];
 }
 
-/** Mencocokkan wajah live dengan daftar kandidat. null bila tidak ada yang cocok. */
-export async function identifyFace(
-  image: string,
-  candidates: FaceCandidate[],
-): Promise<{ id: number; distance: number } | null> {
-  const result = await call<{ match: { id: number; distance: number } | null }>('/identify', {
-    image,
-    candidates,
-    tolerance: env.faceTolerance,
-  });
-  return result.match;
+/** Peringkat karyawan terdekat dengan wajah live (maks. 5). Keputusan akhir di services/identity.ts. */
+export async function rankFaces(image: string, candidates: FaceCandidate[]): Promise<{ id: number; distance: number }[]> {
+  const result = await call<{ ranked: { id: number; distance: number }[] }>('/identify', { image, candidates });
+  return result.ranked;
 }

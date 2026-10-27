@@ -57,6 +57,19 @@ const MIGRATIONS: { id: string; up: () => Promise<void> }[] = [
       });
     },
   },
+  {
+    id: '2026-10-28-pin-wajah-mirip',
+    async up() {
+      // Kolom PIN absen untuk karyawan berwajah mirip. ALTER tidak memicu trigger Super Admin.
+      const rows = await sequelize.query(
+        "SELECT 1 FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'users' AND COLUMN_NAME = 'pin_hash'",
+        { type: QueryTypes.SELECT },
+      );
+      if (rows.length === 0) {
+        await sequelize.query('ALTER TABLE `users` ADD COLUMN `pin_hash` VARCHAR(100) NULL AFTER `face_embedding`');
+      }
+    },
+  },
 ];
 
 export async function runMigrations() {

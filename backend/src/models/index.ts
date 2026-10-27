@@ -103,6 +103,8 @@ export class User extends Model<InferAttributes<User>, InferCreationAttributes<U
   declare defaultShiftId: ForeignKey<number> | null;
   // Versi baru: number[][] (3–5 foto). Data lama berupa number[] tunggal tetap terbaca.
   declare faceEmbedding: CreationOptional<number[][] | number[] | null>;
+  // PIN absen (bcrypt) — wajib untuk karyawan yang wajahnya mirip karyawan lain (mis. saudara)
+  declare pinHash: CreationOptional<string | null>;
   declare isActive: CreationOptional<boolean>;
   declare createdAt: CreationOptional<Date>;
   declare updatedAt: CreationOptional<Date>;
@@ -120,6 +122,7 @@ export class User extends Model<InferAttributes<User>, InferCreationAttributes<U
       isActive: this.isActive,
       hasFace: parseEmbeddings(this.faceEmbedding) !== null,
       faceCount: parseEmbeddings(this.faceEmbedding)?.length ?? 0,
+      hasPin: !!this.pinHash,
       immutable: this.role === 'SUPER_ADMIN',
     };
   }
@@ -134,6 +137,7 @@ User.init(
     role: { type: DataTypes.ENUM(...ROLES), allowNull: false },
     phone: { type: DataTypes.STRING(20), allowNull: false },
     faceEmbedding: { type: DataTypes.JSON, allowNull: true },
+    pinHash: { type: DataTypes.STRING(100), allowNull: true },
     isActive: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: true },
     createdAt: DataTypes.DATE,
     updatedAt: DataTypes.DATE,
@@ -427,7 +431,30 @@ ShiftChangeLog.init(
   { sequelize, tableName: 'shift_change_logs', updatedAt: false },
 );
 
+/** Catatan saat Super Admin tetap mendaftarkan wajah yang mirip karyawan lain. */
+export class FaceOverrideLog extends Model<InferAttributes<FaceOverrideLog>, InferCreationAttributes<FaceOverrideLog>> {
+  declare id: CreationOptional<number>;
+  declare actorId: ForeignKey<number>;
+  declare userId: ForeignKey<number>;
+  declare similarUserId: ForeignKey<number>;
+  declare distance: number;
+  declare reason: string;
+  declare createdAt: CreationOptional<Date>;
+}
+FaceOverrideLog.init(
+  {
+    id: { type: DataTypes.INTEGER.UNSIGNED, autoIncrement: true, primaryKey: true },
+    distance: { type: DataTypes.FLOAT, allowNull: false },
+    reason: { type: DataTypes.TEXT, allowNull: false },
+    createdAt: DataTypes.DATE,
+  },
+  { sequelize, tableName: 'face_override_logs', updatedAt: false },
+);
+
 // ───────────────────────────── Relasi ─────────────────────────────
+FaceOverrideLog.belongsTo(User, { foreignKey: 'actorId', as: 'actor' });
+FaceOverrideLog.belongsTo(User, { foreignKey: 'userId', as: 'user' });
+FaceOverrideLog.belongsTo(User, { foreignKey: 'similarUserId', as: 'similarUser' });
 ShiftChangeLog.belongsTo(User, { foreignKey: 'actorId', as: 'actor' });
 Shift.hasMany(ShiftSlot, { foreignKey: 'shiftId', as: 'slots' });
 Shift.hasOne(ShiftBreak, { foreignKey: 'shiftId', as: 'breakConfig' });

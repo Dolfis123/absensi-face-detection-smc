@@ -11,7 +11,9 @@ import {
   parseEmbeddings,
   User,
 } from '../models';
-import { identifyFace } from '../services/faceClient';
+import { env } from '../config/env';
+import { rankFaces } from '../services/faceClient';
+import { decideIdentity, matchPin } from '../services/identity';
 import { label, loadShifts, resolveActiveSlot } from '../services/shiftService';
 import { haversineMeters } from '../utils/geo';
 import { ah, HttpError } from '../utils/http';
@@ -45,6 +47,7 @@ const checkSchema = z.object({
   latitude: z.number().min(-90).max(90),
   longitude: z.number().min(-180).max(180),
   accuracy: z.number().nonnegative(),
+  pin: z.string().regex(/^\d{4,6}$/, 'PIN harus 4–6 angka').optional(),
 });
 
 const checkLimiter = rateLimit({ windowMs: 60 * 1000, limit: 15, standardHeaders: true, legacyHeaders: false });
@@ -85,8 +88,24 @@ router.post(
       .filter((c): c is { id: number; embeddings: number[][] } => c.embeddings !== null);
     if (candidates.length === 0) throw new HttpError(503, 'Belum ada data wajah karyawan yang terdaftar');
 
-    const match = await identifyFace(body.image, candidates);
-    if (!match) throw new HttpError(401, 'Wajah tidak dikenali. Pastikan wajah terlihat jelas dan coba lagi.');
+    const ranked = await rankFaces(body.image, candidates);
+    const pinUserIds = new Set(employees.filter((u) => u.pinHash).map((u) => u.id));
+    const decision = decideIdentity(ranked, pinUserIds, env.faceTolerance);
+    let match: { id: number; distance: number };
+    if (decision.kind === 'match') {
+      match = decision;
+    } else if (decision.kind === 'pin') {
+      // Wajah mirip karyawan lain (mis. saudara): PIN yang memastikan siapa orangnya
+      if (!body.pin) throw new HttpError(428, 'Masukkan PIN absen Anda untuk memastikan identitas.', { needPin: true });
+      const pool = decision.pool.map((r) => employees.find((u) => u.id === r.id)!);
+      const byPin = await matchPin(body.pin, pool);
+      if (!byPin) throw new HttpError(401, 'PIN salah atau wajah tidak sesuai dengan pemilik PIN.', { needPin: true });
+      match = decision.pool.find((r) => r.id === byPin.id)!;
+    } else if (decision.kind === 'ambiguous') {
+      throw new HttpError(401, 'Wajah mirip dengan lebih dari satu karyawan. Hubungi Super Admin untuk mengatur PIN absen.');
+    } else {
+      throw new HttpError(401, 'Wajah tidak dikenali. Pastikan wajah terlihat jelas dan coba lagi.');
+    }
     const user = employees.find((u) => u.id === match.id)!;
 
     // 4) Izin/sakit/cuti yang sudah disetujui mengunci status hari ini

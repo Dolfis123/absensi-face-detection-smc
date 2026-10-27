@@ -14,6 +14,7 @@ export interface PublicUser {
   isActive: boolean;
   hasFace: boolean;
   faceCount: number;
+  hasPin: boolean;
   immutable: boolean;
 }
 
@@ -118,9 +119,22 @@ export interface Geofence {
 }
 
 export class ApiError extends Error {
-  constructor(public status: number, message: string) {
+  constructor(
+    public status: number,
+    message: string,
+    /** Data tambahan dari server, mis. { needPin: true } atau { code: 'FACE_SIMILAR', similar: [...] } */
+    public details?: Record<string, unknown>,
+  ) {
     super(message);
   }
+}
+
+export interface SimilarFaceInfo {
+  id: number;
+  fullName: string;
+  nik: string;
+  hasPin: boolean;
+  distance: number;
 }
 
 const TOKEN_KEY = 'smc_token';
@@ -149,7 +163,10 @@ async function request<T>(method: string, url: string, body?: unknown): Promise<
   if (res.status === 401 && token && !url.startsWith('/auth/login')) onUnauthorized?.();
   if (res.status === 204) return undefined as T;
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new ApiError(res.status, (data as { message?: string }).message ?? `Error ${res.status}`);
+  if (!res.ok) {
+    const body = data as { message?: string; details?: Record<string, unknown> };
+    throw new ApiError(res.status, body.message ?? `Error ${res.status}`, body.details);
+  }
   return data as T;
 }
 

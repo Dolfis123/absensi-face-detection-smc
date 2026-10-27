@@ -3,7 +3,7 @@ SMC-FaceAttend — Face Detection Engine
 Layanan internal (hanya dipanggil oleh backend Node.js, jangan dibuka ke internet).
 
 POST /enroll    {images: [3..5 data URL]}        -> {embeddings, spread, quality}
-POST /identify  {image, candidates, tolerance}   -> {match: {id, distance} | null}
+POST /identify  {image, candidates}              -> {ranked: [{id, distance}] (maks. 5, terdekat dulu)}
 POST /encode    {image}                          -> {embedding}   (satu foto, untuk debug)
 """
 import base64
@@ -186,19 +186,16 @@ def enroll(req: EnrollRequest):
 
 @app.post("/identify")
 def identify(req: IdentifyRequest):
+    """
+    Mengembalikan 5 karyawan terdekat (jarak terkecil dulu). Keputusan siapa orangnya
+    (termasuk verifikasi PIN untuk karyawan berwajah mirip) dilakukan di backend.
+    """
     if not req.candidates:
-        return {"match": None}
+        return {"ranked": []}
     image = load_image(req.image)
     location = detect_single_face(image)
     probe = face_recognition.face_encodings(image, known_face_locations=[location], num_jitters=1)[0]
     # Jarak ke tiap karyawan = jarak terdekat ke salah satu foto terdaftarnya
     distances = np.array([float(face_recognition.face_distance(np.array(c.embeddings), probe).min()) for c in req.candidates])
-    order = np.argsort(distances)
-    best = int(order[0])
-    best_distance = float(distances[best])
-    if best_distance > req.tolerance:
-        return {"match": None}
-    # Tolak bila dua kandidat terlalu mirip (ambigu) agar tidak salah catat orang lain
-    if len(order) > 1 and float(distances[int(order[1])]) - best_distance < 0.05:
-        return {"match": None}
-    return {"match": {"id": req.candidates[best].id, "distance": best_distance}}
+    order = np.argsort(distances)[:5]
+    return {"ranked": [{"id": req.candidates[int(i)].id, "distance": float(distances[int(i)])} for i in order]}

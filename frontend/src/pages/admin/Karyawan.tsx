@@ -2,8 +2,9 @@ import { FormEvent, useRef, useState } from 'react';
 import { useLoad } from '../../components/attendance';
 import { Camera, CameraHandle } from '../../components/Camera';
 import { useFeedback } from '../../components/feedback';
-import { Alert, Badge, Button, Card, Empty, Field, Input, Loading, Modal, PageHeader, PersonCell, SearchInput, Select, Table, Td, Th } from '../../components/ui';
-import { api, errMsg, PublicUser, Shift } from '../../lib/api';
+import { Icon } from '../../components/icons';
+import { Alert, Badge, Button, Card, Empty, Field, Input, Loading, Modal, PageHeader, PersonCell, SearchInput, Select, Table, Td, Textarea, Th } from '../../components/ui';
+import { api, ApiError, errMsg, PublicUser, Shift, SimilarFaceInfo } from '../../lib/api';
 import { ROLE_LABEL } from '../../lib/format';
 
 type FormState = {
@@ -98,15 +99,87 @@ function FaceCapture({ photos, onChange }: { photos: string[]; onChange: (v: str
   );
 }
 
+interface OverrideState {
+  confirmed: boolean;
+  reason: string;
+  pin: string;
+  otherPins: Record<string, string>;
+}
+const blankOverride: OverrideState = { confirmed: false, reason: '', pin: '', otherPins: {} };
+
+const PinInput = (p: { value: string; onChange: (v: string) => void; placeholder?: string }) => (
+  <Input
+    inputMode="numeric"
+    autoComplete="off"
+    maxLength={6}
+    placeholder={p.placeholder ?? '4–6 angka'}
+    value={p.value}
+    onChange={(e) => p.onChange(e.target.value.replace(/\D/g, '').slice(0, 6))}
+    className="font-mono tracking-[0.3em]"
+  />
+);
+
+/** Muncul bila server menolak karena wajah mirip karyawan lain (mis. saudara kandung). */
+function SimilarOverridePanel({ similar, value, onChange }: { similar: SimilarFaceInfo[]; value: OverrideState; onChange: (v: OverrideState) => void }) {
+  const set = (patch: Partial<OverrideState>) => onChange({ ...value, ...patch });
+  return (
+    <div className="space-y-3 rounded-xl border border-amber-300 bg-amber-50 p-4">
+      <div className="flex items-start gap-2 text-sm text-amber-900">
+        <Icon name="alert" className="mt-0.5 h-4 w-4 shrink-0" />
+        <div>
+          <p className="font-semibold">Wajah sangat mirip dengan karyawan terdaftar:</p>
+          <ul className="mt-1 list-disc pl-5">
+            {similar.map((s) => (
+              <li key={s.id}>
+                {s.fullName} (NIK {s.nik}) · jarak {s.distance.toFixed(2)}
+              </li>
+            ))}
+          </ul>
+          <p className="mt-2">
+            Bila ini <b>orang yang sama</b>, jangan lanjutkan. Bila <b>orang berbeda</b> (mis. saudara), lanjutkan dengan PIN absen: saat absen, karyawan-karyawan ini
+            akan diminta PIN agar tidak tertukar.
+          </p>
+        </div>
+      </div>
+      <label className="flex items-start gap-2 text-sm font-medium text-slate-800">
+        <input type="checkbox" className="mt-0.5 h-4 w-4" checked={value.confirmed} onChange={(e) => set({ confirmed: e.target.checked })} />
+        Saya sudah memastikan ini orang yang berbeda (mis. cek KTP)
+      </label>
+      {value.confirmed && (
+        <>
+          <Field label="Alasan / keterangan (tercatat)">
+            <Textarea rows={2} value={value.reason} onChange={(e) => set({ reason: e.target.value })} placeholder="mis. Kakak-adik kandung, sudah dicek KTP" />
+          </Field>
+          <Field label="PIN absen karyawan ini" hint="Rahasiakan; hanya diberikan ke karyawan yang bersangkutan">
+            <PinInput value={value.pin} onChange={(pin) => set({ pin })} />
+          </Field>
+          {similar
+            .filter((s) => !s.hasPin)
+            .map((s) => (
+              <Field key={s.id} label={`PIN absen untuk ${s.fullName}`} hint="Belum punya PIN; wajib diisi dan harus berbeda">
+                <PinInput value={value.otherPins[String(s.id)] ?? ''} onChange={(pin) => set({ otherPins: { ...value.otherPins, [String(s.id)]: pin } })} />
+              </Field>
+            ))}
+        </>
+      )}
+    </div>
+  );
+}
+
 export default function Karyawan() {
   const { data, error, loading, reload } = useLoad(() =>
     Promise.all([api.get<PublicUser[]>('/admin/users'), api.get<Shift[]>('/shifts')]),
   );
-  const [mode, setMode] = useState<{ type: 'create' } | { type: 'edit'; user: PublicUser } | { type: 'face'; user: PublicUser } | null>(null);
+  const [mode, setMode] = useState<
+    { type: 'create' } | { type: 'edit'; user: PublicUser } | { type: 'face'; user: PublicUser } | { type: 'pin'; user: PublicUser } | null
+  >(null);
   const [form, setForm] = useState<FormState>(blank(1));
   const [face, setFace] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const [similar, setSimilar] = useState<SimilarFaceInfo[] | null>(null);
+  const [override, setOverride] = useState<OverrideState>(blankOverride);
+  const [pinValue, setPinValue] = useState('');
   const [q, setQ] = useState('');
   const { toast, confirm } = useFeedback();
 
@@ -123,6 +196,9 @@ export default function Karyawan() {
   const open = (m: NonNullable<typeof mode>) => {
     setFormError(null);
     setFace([]);
+    setSimilar(null);
+    setOverride(blankOverride);
+    setPinValue('');
     if (m.type === 'create') setForm(blank(shifts[0]?.id ?? 1));
     if (m.type === 'edit') {
       const u = m.user;
@@ -146,23 +222,44 @@ export default function Karyawan() {
     setSaving(true);
     setFormError(null);
     try {
+      if (mode.type === 'pin') {
+        if (!/^\d{4,6}$/.test(pinValue)) throw new Error('PIN harus 4–6 angka');
+        await api.put(`/admin/users/${mode.user.id}/pin`, { pin: pinValue });
+        toast(`PIN absen ${mode.user.fullName} tersimpan.`);
+        setMode(null);
+        reload();
+        return;
+      }
       const needsFace = mode.type === 'face' || (mode.type === 'create' && form.role === 'KARYAWAN');
       if (needsFace && face.length < MIN_FACE_PHOTOS) throw new Error(`Ambil minimal ${MIN_FACE_PHOTOS} foto wajah terlebih dahulu`);
+      let similarOverride: { reason: string; pin: string; otherPins: Record<string, string> } | undefined;
+      if (similar) {
+        if (!override.confirmed) throw new Error('Centang konfirmasi bahwa ini orang yang berbeda, atau batalkan pendaftaran.');
+        if (override.reason.trim().length < 10) throw new Error('Alasan minimal 10 karakter');
+        if (!/^\d{4,6}$/.test(override.pin)) throw new Error('PIN absen harus 4–6 angka');
+        similarOverride = { reason: override.reason.trim(), pin: override.pin, otherPins: override.otherPins };
+      }
       let result: { warning?: string | null } | undefined;
       if (mode.type === 'create') {
         const { isActive: _ignored, ...payload } = form;
-        result = await api.post('/admin/users', { ...payload, faceImages: needsFace ? face : undefined });
+        result = await api.post('/admin/users', { ...payload, faceImages: needsFace ? face : undefined, similarOverride });
       } else if (mode.type === 'edit') {
         await api.put(`/admin/users/${mode.user.id}`, form);
       } else {
-        result = await api.put(`/admin/users/${mode.user.id}/face`, { faceImages: face });
+        result = await api.put(`/admin/users/${mode.user.id}/face`, { faceImages: face, similarOverride });
       }
       if (result?.warning) toast(result.warning, 'info');
+      else if (similarOverride) toast('Tersimpan dengan PIN absen. Berikan PIN secara pribadi ke masing-masing karyawan.');
       else toast(mode.type === 'face' ? 'Data wajah berhasil diperbarui.' : 'Data pengguna tersimpan.');
       setMode(null);
       reload();
     } catch (err) {
-      setFormError(errMsg(err));
+      if (err instanceof ApiError && err.details?.code === 'FACE_SIMILAR') {
+        setSimilar(err.details.similar as SimilarFaceInfo[]);
+        setFormError('Wajah mirip karyawan lain. Periksa keterangan di bawah sebelum melanjutkan.');
+      } else {
+        setFormError(errMsg(err));
+      }
     } finally {
       setSaving(false);
     }
@@ -253,6 +350,11 @@ export default function Karyawan() {
                   ) : (
                     <Badge className="bg-emerald-50 text-emerald-700 ring-1 ring-emerald-600/15">{u.faceCount} foto</Badge>
                   )}
+                  {u.hasPin && (
+                    <span title="Absen wajib memakai PIN (wajah mirip karyawan lain)">
+                      <Badge className="ml-1 bg-violet-50 text-violet-700 ring-1 ring-violet-600/15">PIN</Badge>
+                    </span>
+                  )}
                 </Td>
                 <Td>
                   <span className="inline-flex items-center gap-1.5 text-sm">
@@ -273,6 +375,11 @@ export default function Karyawan() {
                           Wajah
                         </Button>
                       )}
+                      {u.role === 'KARYAWAN' && (
+                        <Button variant="ghost" onClick={() => open({ type: 'pin', user: u })}>
+                          PIN
+                        </Button>
+                      )}
                       <Button variant="ghost" className="text-rose-600" onClick={() => remove(u)}>
                         Hapus
                       </Button>
@@ -289,11 +396,56 @@ export default function Karyawan() {
       <Modal
         open={!!mode}
         onClose={() => setMode(null)}
-        title={mode?.type === 'create' ? 'Tambah Pengguna' : mode?.type === 'edit' ? 'Edit Pengguna' : `Perbarui Wajah · ${mode?.type === 'face' ? mode.user.fullName : ''}`}
+        title={
+          mode?.type === 'create'
+            ? 'Tambah Pengguna'
+            : mode?.type === 'edit'
+              ? 'Edit Pengguna'
+              : mode?.type === 'pin'
+                ? `PIN Absen · ${mode.user.fullName}`
+                : `Perbarui Wajah · ${mode?.type === 'face' ? mode.user.fullName : ''}`
+        }
       >
         <form onSubmit={submit} className="space-y-3">
           {formError && <Alert>{formError}</Alert>}
-          {mode?.type !== 'face' && (
+          {mode?.type === 'pin' && (
+            <>
+              <p className="text-sm text-slate-600">
+                PIN absen dipakai untuk karyawan yang wajahnya mirip karyawan lain (mis. saudara). Bila wajahnya cocok dengan karyawan ber-PIN, layar absen
+                meminta PIN agar tidak tertukar. PIN harus unik dan dirahasiakan.
+              </p>
+              <Field label={mode.user.hasPin ? 'PIN baru' : 'PIN'}>
+                <PinInput value={pinValue} onChange={setPinValue} />
+              </Field>
+              {mode.user.hasPin && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="w-full text-rose-600"
+                  onClick={async () => {
+                    const ok = await confirm({
+                      title: 'Hapus PIN absen?',
+                      message: 'Bila wajah karyawan ini mirip karyawan lain, absennya bisa ditolak atau tertukar tanpa PIN.',
+                      confirmLabel: 'Hapus PIN',
+                      danger: true,
+                    });
+                    if (!ok) return;
+                    try {
+                      await api.put(`/admin/users/${mode.user.id}/pin`, { pin: null });
+                      toast('PIN dihapus.');
+                      setMode(null);
+                      reload();
+                    } catch (err) {
+                      setFormError(errMsg(err));
+                    }
+                  }}
+                >
+                  Hapus PIN
+                </Button>
+              )}
+            </>
+          )}
+          {mode?.type !== 'face' && mode?.type !== 'pin' && (
             <>
               <Field label="Role">
                 <Select value={form.role} onChange={(e) => set('role', e.target.value as FormState['role'])}>
@@ -349,6 +501,7 @@ export default function Karyawan() {
               <FaceCapture photos={face} onChange={setFace} />
             </Field>
           )}
+          {similar && <SimilarOverridePanel similar={similar} value={override} onChange={setOverride} />}
           <Button type="submit" className="w-full" loading={saving}>
             {saving && face.length ? 'Memproses wajah… (±10–30 detik)' : 'Simpan'}
           </Button>

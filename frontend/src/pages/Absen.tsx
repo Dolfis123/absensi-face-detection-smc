@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Camera, CameraHandle } from '../components/Camera';
 import { Button } from '../components/ui';
-import { api, errMsg, Geofence, SlotType } from '../lib/api';
+import { api, ApiError, errMsg, Geofence, SlotType } from '../lib/api';
 import { fmtMinutes, haversine, SLOT_LABEL, STATUS_STYLE } from '../lib/format';
 
 interface CheckResult {
@@ -59,6 +59,9 @@ export default function Absen() {
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<CheckResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [pinPrompt, setPinPrompt] = useState<{ image: string; position: Position } | null>(null);
+  const [pin, setPin] = useState('');
+  const [pinError, setPinError] = useState<string | null>(null);
   const clock = useServerClock();
 
   useEffect(() => {
@@ -92,23 +95,42 @@ export default function Absen() {
   const inside = distance !== null && geo !== null && distance <= geo.radiusMeters;
   const accurate = pos !== null && geo !== null && pos.accuracy <= geo.maxAccuracyMeters;
 
-  async function submit() {
+  async function send(image: string, position: Position, pinCode?: string) {
+    setSubmitting(true);
+    setError(null);
+    try {
+      const r = await api.post<CheckResult>('/attendance/check', { image, ...position, pin: pinCode });
+      setPinPrompt(null);
+      setResult(r);
+    } catch (e) {
+      // Wajah mirip karyawan lain (mis. saudara): server meminta PIN. Foto yang sama dikirim ulang bersama PIN.
+      if (e instanceof ApiError && e.details?.needPin) {
+        setPinPrompt({ image, position });
+        setPinError(pinCode ? e.message : null);
+        setPin('');
+      } else {
+        setPinPrompt(null);
+        setError(errMsg(e));
+      }
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  function submit() {
     if (!pos) return;
     const image = camera.current?.capture();
     if (!image) {
       setError('Kamera belum siap');
       return;
     }
-    setSubmitting(true);
-    setError(null);
-    try {
-      setResult(await api.post<CheckResult>('/attendance/check', { image, ...pos }));
-    } catch (e) {
-      setError(errMsg(e));
-    } finally {
-      setSubmitting(false);
-    }
+    send(image, pos);
   }
+
+  const pressKey = (k: string) => {
+    if (k === 'del') setPin((p) => p.slice(0, -1));
+    else setPin((p) => (p.length < 6 ? p + k : p));
+  };
 
   return (
     <div className="min-h-screen bg-slate-900 text-white">
@@ -150,6 +172,54 @@ export default function Absen() {
           Lokasi & wajah divalidasi ulang di server. Indikator di atas hanya panduan.
         </p>
       </div>
+
+      {pinPrompt && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/85 p-6">
+          <div className="w-full max-w-xs rounded-3xl bg-white p-6 text-center text-slate-800 shadow-2xl">
+            <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-full bg-violet-100 text-2xl text-violet-600">🔒</div>
+            <div className="text-lg font-bold">Masukkan PIN Absen</div>
+            <p className="mt-1 text-xs text-slate-500">Wajah Anda mirip karyawan lain. PIN memastikan absen tercatat atas nama Anda.</p>
+            <div className="my-4 flex justify-center gap-2">
+              {Array.from({ length: 6 }, (_, i) => (
+                <span key={i} className={`h-3 w-3 rounded-full ${i < pin.length ? 'bg-violet-600' : 'bg-slate-200'}`} />
+              ))}
+            </div>
+            {pinError && <p className="mb-3 text-sm font-medium text-rose-600">{pinError}</p>}
+            <div className="grid grid-cols-3 gap-2">
+              {['1', '2', '3', '4', '5', '6', '7', '8', '9', 'del', '0', 'ok'].map((k) =>
+                k === 'ok' ? (
+                  <button
+                    key={k}
+                    disabled={pin.length < 4 || submitting}
+                    onClick={() => send(pinPrompt.image, pinPrompt.position, pin)}
+                    className="rounded-xl bg-violet-600 py-3 text-sm font-bold text-white disabled:opacity-40"
+                  >
+                    {submitting ? '…' : 'OK'}
+                  </button>
+                ) : (
+                  <button
+                    key={k}
+                    onClick={() => pressKey(k)}
+                    className="rounded-xl bg-slate-100 py-3 text-lg font-semibold active:bg-slate-200"
+                    aria-label={k === 'del' ? 'Hapus' : k}
+                  >
+                    {k === 'del' ? '⌫' : k}
+                  </button>
+                ),
+              )}
+            </div>
+            <button
+              onClick={() => {
+                setPinPrompt(null);
+                setPin('');
+              }}
+              className="mt-4 text-sm text-slate-500 hover:text-slate-700"
+            >
+              Batal
+            </button>
+          </div>
+        </div>
+      )}
 
       {(result || error) && (
         <div

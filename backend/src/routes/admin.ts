@@ -1,12 +1,13 @@
 import bcrypt from 'bcryptjs';
 import { Router } from 'express';
-import { Op } from 'sequelize';
+import { Op, Transaction } from 'sequelize';
 import { z } from 'zod';
 import { currentUser, requireRole } from '../middleware/auth';
 import {
   Attendance,
   AuditLog,
   EmployeeSchedule,
+  FaceOverrideLog,
   GeofenceSetting,
   Holiday,
   SLOT_TYPES,
@@ -19,7 +20,8 @@ import {
 import { applyCorrection } from '../services/correctionService';
 import { getLateTolerance, saveLateTolerance } from '../services/settings';
 import { BreakInput, loadShifts, SlotInput, validateShiftTimes } from '../services/shiftService';
-import { enrollWithDuplicateCheck } from '../services/faceEnrollment';
+import { enrollWithDuplicateCheck, SimilarFace } from '../services/faceEnrollment';
+import { assertPinAvailable, hashPin, PIN_RE } from '../services/identity';
 import { ah, HttpError } from '../utils/http';
 import { DATE_RE, eachDate, witNow } from '../utils/time';
 
@@ -45,7 +47,53 @@ const createUserSchema = z.object({
   phone,
   defaultShiftId: z.number().int().positive(),
   faceImages: faceImages.optional(),
+  similarOverride: z
+    .object({
+      reason: z.string().trim().min(10, 'Alasan minimal 10 karakter').max(500),
+      pin: z.string().regex(PIN_RE, 'PIN harus 4–6 angka'),
+      // PIN untuk karyawan mirip yang belum punya PIN, dikunci dengan id karyawan
+      otherPins: z.record(z.string(), z.string().regex(PIN_RE, 'PIN harus 4–6 angka')).default({}),
+    })
+    .optional(),
 });
+type SimilarOverride = NonNullable<z.infer<typeof createUserSchema>['similarOverride']>;
+
+/**
+ * Wajah mirip yang disetujui Super Admin: semua pihak wajib punya PIN unik,
+ * dan persetujuan dicatat di face_override_logs.
+ */
+async function prepareSimilarOverride(similar: SimilarFace[], override: SimilarOverride | undefined, targetId: number | null) {
+  if (similar.length === 0 || !override) return null;
+  const toSet = new Map<number, string>();
+  for (const s of similar) {
+    if (s.user.pinHash) continue;
+    const pin = override.otherPins[String(s.user.id)];
+    if (!pin) throw new HttpError(400, `PIN absen untuk ${s.user.fullName} wajib diisi, karena wajahnya mirip`);
+    toSet.set(s.user.id, pin);
+  }
+  const allNew = [override.pin, ...toSet.values()];
+  if (new Set(allNew).size !== allNew.length) throw new HttpError(400, 'PIN tiap karyawan harus berbeda');
+  const exclude = [...toSet.keys(), ...(targetId ? [targetId] : [])];
+  for (const pin of allNew) await assertPinAvailable(pin, exclude);
+  return {
+    pinHash: await hashPin(override.pin),
+    others: await Promise.all([...toSet].map(async ([id, pin]) => ({ id, pinHash: await hashPin(pin) }))),
+  };
+}
+
+async function applySimilarOverride(
+  prepared: NonNullable<Awaited<ReturnType<typeof prepareSimilarOverride>>>,
+  similar: SimilarFace[],
+  reason: string,
+  actorId: number,
+  userId: number,
+  transaction: Transaction,
+) {
+  for (const o of prepared.others) await User.update({ pinHash: o.pinHash }, { where: { id: o.id }, transaction });
+  for (const s of similar) {
+    await FaceOverrideLog.create({ actorId, userId, similarUserId: s.user.id, distance: s.distance, reason }, { transaction });
+  }
+}
 
 async function loadEditableUser(id: number) {
   const user = await User.findByPk(id);
@@ -74,16 +122,31 @@ router.post(
     if (body.role === 'KARYAWAN' && !body.faceImages) {
       throw new HttpError(400, 'Data wajah wajib diambil untuk Karyawan Parkir');
     }
-    const enrollment = body.role === 'KARYAWAN' && body.faceImages ? await enrollWithDuplicateCheck(body.faceImages) : null;
-    const user = await User.create({
-      fullName: body.fullName,
-      nik: body.nik,
-      username: body.username,
-      passwordHash: await bcrypt.hash(body.password, 12),
-      role: body.role,
-      phone: body.phone,
-      defaultShiftId: body.defaultShiftId,
-      faceEmbedding: enrollment?.embeddings ?? null,
+    const enrollment =
+      body.role === 'KARYAWAN' && body.faceImages
+        ? await enrollWithDuplicateCheck(body.faceImages, undefined, !!body.similarOverride)
+        : null;
+    const prepared = enrollment ? await prepareSimilarOverride(enrollment.similar, body.similarOverride, null) : null;
+    const passwordHash = await bcrypt.hash(body.password, 12);
+    const user = await sequelize.transaction(async (transaction) => {
+      const created = await User.create(
+        {
+          fullName: body.fullName,
+          nik: body.nik,
+          username: body.username,
+          passwordHash,
+          role: body.role,
+          phone: body.phone,
+          defaultShiftId: body.defaultShiftId,
+          faceEmbedding: enrollment?.embeddings ?? null,
+          pinHash: prepared?.pinHash ?? null,
+        },
+        { transaction },
+      );
+      if (prepared && enrollment) {
+        await applySimilarOverride(prepared, enrollment.similar, body.similarOverride!.reason, currentUser(req).id, created.id, transaction);
+      }
+      return created;
     });
     res.status(201).json({ ...user.toPublic(), warning: enrollment?.warning ?? null });
   }),
@@ -93,7 +156,7 @@ router.put(
   '/users/:id',
   ah(async (req, res) => {
     const body = createUserSchema
-      .omit({ faceImages: true })
+      .omit({ faceImages: true, similarOverride: true })
       .extend({ password: z.string().min(8).max(100).optional().or(z.literal('')), isActive: z.boolean() })
       .parse(req.body);
     const user = await loadEditableUser(Number(req.params.id));
@@ -118,12 +181,51 @@ router.put(
 router.put(
   '/users/:id/face',
   ah(async (req, res) => {
-    const { faceImages: images } = z.object({ faceImages }).parse(req.body);
+    const { faceImages: images, similarOverride } = createUserSchema
+      .pick({ similarOverride: true })
+      .extend({ faceImages })
+      .parse(req.body);
     const user = await loadEditableUser(Number(req.params.id));
     if (user.role !== 'KARYAWAN') throw new HttpError(400, 'Data wajah hanya untuk Karyawan Parkir');
-    const enrollment = await enrollWithDuplicateCheck(images, user.id);
-    await user.update({ faceEmbedding: enrollment.embeddings });
+    const enrollment = await enrollWithDuplicateCheck(images, user.id, !!similarOverride);
+    const prepared = await prepareSimilarOverride(enrollment.similar, similarOverride, user.id);
+    await sequelize.transaction(async (transaction) => {
+      await user.update({ faceEmbedding: enrollment.embeddings, ...(prepared ? { pinHash: prepared.pinHash } : {}) }, { transaction });
+      if (prepared) {
+        await applySimilarOverride(prepared, enrollment.similar, similarOverride!.reason, currentUser(req).id, user.id, transaction);
+      }
+    });
     res.json({ ...user.toPublic(), warning: enrollment.warning });
+  }),
+);
+
+/** Pasang / ganti / hapus PIN absen karyawan (pin: null = hapus). */
+router.put(
+  '/users/:id/pin',
+  ah(async (req, res) => {
+    const { pin } = z.object({ pin: z.string().regex(PIN_RE, 'PIN harus 4–6 angka').nullable() }).parse(req.body);
+    const user = await loadEditableUser(Number(req.params.id));
+    if (user.role !== 'KARYAWAN') throw new HttpError(400, 'PIN absen hanya untuk Karyawan Parkir');
+    if (pin) await assertPinAvailable(pin, [user.id]);
+    await user.update({ pinHash: pin ? await hashPin(pin) : null });
+    res.json(user.toPublic());
+  }),
+);
+
+router.get(
+  '/face-overrides',
+  ah(async (_req, res) => {
+    res.json(
+      await FaceOverrideLog.findAll({
+        include: [
+          { model: User, as: 'actor', attributes: ['id', 'fullName'] },
+          { model: User, as: 'user', attributes: ['id', 'fullName', 'nik'] },
+          { model: User, as: 'similarUser', attributes: ['id', 'fullName', 'nik'] },
+        ],
+        order: [['createdAt', 'DESC']],
+        limit: 100,
+      }),
+    );
   }),
 );
 
