@@ -144,9 +144,13 @@ ufw allow "${SSH_PORT:-22}/tcp"
 ufw allow 'Nginx Full'
 ufw --force enable
 
-step "9/9 Backup database harian (02:30 WIT server time)"
+step "9/9 Backup database harian (02:30 WIT)"
 chmod +x "$APP_DIR/deploy/backup-db.sh" "$APP_DIR/deploy/update.sh"
-echo "30 2 * * * root $APP_DIR/deploy/backup-db.sh >> /var/log/smc-backup.log 2>&1" > /etc/cron.d/smc-backup
+# Cron memakai zona waktu server. 02:30 WIT (UTC+9) = 17:30 UTC; sesuaikan jamnya bila server tidak UTC.
+TZ_OFFSET_H=$(( $(date +%z | sed 's/^\([+-]\)0*\([0-9]*\)[0-9][0-9]$/\1\2/') + 0 ))
+BACKUP_HOUR=$(( (2 - 9 + TZ_OFFSET_H + 24) % 24 ))
+echo "30 $BACKUP_HOUR * * * root $APP_DIR/deploy/backup-db.sh >> /var/log/smc-backup.log 2>&1" > /etc/cron.d/smc-backup
+echo "Backup terjadwal pukul $BACKUP_HOUR:30 waktu server (= 02:30 WIT)."
 
 step "Cek kesehatan"
 sleep 3
