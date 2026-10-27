@@ -1,0 +1,20 @@
+[Unit]
+Description=SMC-FaceAttend Backend API (Node.js)
+After=network.target mysql.service smc-face.service
+Wants=mysql.service
+
+[Service]
+Type=simple
+User=smc
+Group=smc
+WorkingDirectory=/var/www/smc/backend
+Environment=NODE_ENV=production
+ExecStart=/usr/bin/node dist/server.js
+Restart=always
+RestartSec=5
+# Pengamanan dasar
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,17 @@
+[Unit]
+Description=SMC-FaceAttend Face Recognition Service (Python)
+After=network.target
+
+[Service]
+Type=simple
+User=smc
+Group=smc
+WorkingDirectory=/var/www/smc/face-service
+ExecStart=/var/www/smc/face-service/.venv/bin/python -m uvicorn app:app --host 127.0.0.1 --port 8001 --workers 1
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

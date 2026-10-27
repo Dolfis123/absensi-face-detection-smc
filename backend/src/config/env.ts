@@ -13,6 +13,8 @@ const num = (key: string, fallback: number) => {
 
 export const env = {
   port: num('PORT', 4000),
+  // Produksi: 127.0.0.1 agar API hanya bisa diakses lewat Nginx
+  host: process.env.HOST ?? '0.0.0.0',
   corsOrigin: process.env.CORS_ORIGIN ?? 'http://localhost:5173',
   db: {
     host: process.env.DB_HOST ?? '127.0.0.1',
