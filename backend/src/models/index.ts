@@ -13,8 +13,12 @@ import { HttpError } from '../utils/http';
 
 export const ROLES = ['SUPER_ADMIN', 'KOORDINATOR', 'KARYAWAN'] as const;
 export type Role = (typeof ROLES)[number];
-export const SLOT_TYPES = ['MASUK', 'ISTIRAHAT', 'PULANG'] as const;
+// ISTIRAHAT = mulai istirahat, KEMBALI = selesai istirahat. KEMBALI ditaruh di akhir agar
+// ALTER ENUM pada database lama cukup menambah nilai baru (lihat migrations.ts).
+export const SLOT_TYPES = ['MASUK', 'ISTIRAHAT', 'PULANG', 'KEMBALI'] as const;
 export type SlotType = (typeof SLOT_TYPES)[number];
+/** Slot dengan jendela tetap (shift_slots). Istirahat diatur terpisah lewat ShiftBreak. */
+export type FixedSlotType = 'MASUK' | 'PULANG';
 export const LEAVE_TYPES = ['IZIN', 'SAKIT', 'CUTI'] as const;
 export type LeaveType = (typeof LEAVE_TYPES)[number];
 export const ISSUE_STATUSES = ['OPEN', 'REVIEWED', 'ESCALATED', 'RESOLVED', 'REJECTED'] as const;
@@ -28,6 +32,7 @@ export class Shift extends Model<InferAttributes<Shift>, InferCreationAttributes
   declare startTime: string; // HH:MM WIT
   declare endTime: string;
   declare slots?: NonAttribute<ShiftSlot[]>;
+  declare breakConfig?: NonAttribute<ShiftBreak | null>;
 }
 Shift.init(
   {
@@ -57,6 +62,33 @@ ShiftSlot.init(
     sortOrder: { type: DataTypes.TINYINT, allowNull: false },
   },
   { sequelize, tableName: 'shift_slots', indexes: [{ unique: true, fields: ['shift_id', 'type'] }] },
+);
+
+/**
+ * Istirahat bergantian per shift: karyawan tap "Mulai Istirahat" kapan saja di dalam
+ * rentang [windowStart, windowEnd], lalu tap "Selesai Istirahat" saat kembali ke pos.
+ * Durasi > maxMinutes + toleranceMinutes ditandai "Istirahat lebih".
+ */
+export class ShiftBreak extends Model<InferAttributes<ShiftBreak>, InferCreationAttributes<ShiftBreak>> {
+  declare shiftId: number;
+  declare enabled: boolean;
+  declare windowStart: string;
+  declare windowEnd: string;
+  declare maxMinutes: number;
+  declare toleranceMinutes: number;
+  declare updatedAt: CreationOptional<Date>;
+}
+ShiftBreak.init(
+  {
+    shiftId: { type: DataTypes.INTEGER.UNSIGNED, primaryKey: true },
+    enabled: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
+    windowStart: { type: DataTypes.STRING(5), allowNull: false },
+    windowEnd: { type: DataTypes.STRING(5), allowNull: false },
+    maxMinutes: { type: DataTypes.SMALLINT.UNSIGNED, allowNull: false },
+    toleranceMinutes: { type: DataTypes.SMALLINT.UNSIGNED, allowNull: false },
+    updatedAt: DataTypes.DATE,
+  },
+  { sequelize, tableName: 'shift_breaks', createdAt: false },
 );
 
 // ───────────────────────────── Pengguna ─────────────────────────────
@@ -398,6 +430,7 @@ ShiftChangeLog.init(
 // ───────────────────────────── Relasi ─────────────────────────────
 ShiftChangeLog.belongsTo(User, { foreignKey: 'actorId', as: 'actor' });
 Shift.hasMany(ShiftSlot, { foreignKey: 'shiftId', as: 'slots' });
+Shift.hasOne(ShiftBreak, { foreignKey: 'shiftId', as: 'breakConfig' });
 ShiftSlot.belongsTo(Shift, { foreignKey: 'shiftId' });
 User.belongsTo(Shift, { foreignKey: 'defaultShiftId', as: 'defaultShift' });
 

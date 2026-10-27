@@ -1,14 +1,14 @@
 import { FormEvent, useState } from 'react';
 import { useLoad } from '../../components/attendance';
 import { Alert, Badge, Button, Card, Empty, Field, Input, Loading, PageHeader, Select, Table, Td, Textarea, Th } from '../../components/ui';
-import { api, AttendanceIssue, errMsg, PublicUser } from '../../lib/api';
+import { api, AttendanceIssue, errMsg, PublicUser, SlotType } from '../../lib/api';
 import { fmtDate, SLOT_LABEL, todayWIT } from '../../lib/format';
 
 interface AuditLogRow {
   id: number;
   action: 'ADD_ATTENDANCE' | 'VOID_ATTENDANCE';
   date: string;
-  slotType: 'MASUK' | 'ISTIRAHAT' | 'PULANG';
+  slotType: SlotType;
   before: { localTime: string; status: string } | null;
   after: { localTime: string; status: string } | null;
   reason: string;

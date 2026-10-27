@@ -17,9 +17,13 @@ export default function Laporan() {
     [range.from, range.to],
   );
 
-  const download = (url: string, name: string) => {
+  const [busy, setBusy] = useState<string | null>(null);
+  const download = (url: string, name: string, key: string) => {
     setDlError(null);
-    downloadFile(url, name).catch((e) => setDlError(errMsg(e)));
+    setBusy(key);
+    downloadFile(url, name)
+      .catch((e) => setDlError(errMsg(e)))
+      .finally(() => setBusy(null));
   };
 
   return (
@@ -36,13 +40,24 @@ export default function Laporan() {
               <Input type="date" value={range.to} onChange={(e) => e.target.value && setRange({ ...range, to: e.target.value })} />
             </Field>
           </div>
-          <Button
-            variant="secondary"
-            className="mt-3 w-full"
-            onClick={() => download(`/reports/detail.csv?from=${range.from}&to=${range.to}`, `absensi-detail_${range.from}_${range.to}.csv`)}
-          >
-            Unduh Detail Harian (Excel)
-          </Button>
+          <div className="mt-3 grid gap-2 sm:grid-cols-2">
+            <Button
+              icon="fileText"
+              loading={busy === 'detail-pdf'}
+              onClick={() => download(`/reports/detail.pdf?from=${range.from}&to=${range.to}`, `laporan-kehadiran_${range.from}_${range.to}.pdf`, 'detail-pdf')}
+            >
+              Unduh PDF
+            </Button>
+            <Button
+              variant="secondary"
+              icon="download"
+              loading={busy === 'detail-csv'}
+              onClick={() => download(`/reports/detail.csv?from=${range.from}&to=${range.to}`, `absensi-detail_${range.from}_${range.to}.csv`, 'detail-csv')}
+            >
+              Unduh Excel (CSV)
+            </Button>
+          </div>
+          <p className="mt-2 text-xs text-slate-500">PDF berisi ringkasan semua karyawan dan rincian harian per karyawan, termasuk istirahat.</p>
         </Card>
         {user?.role === 'SUPER_ADMIN' && (
           <Card>
@@ -50,9 +65,24 @@ export default function Laporan() {
             <Field label="Bulan">
               <Input type="month" value={month} onChange={(e) => e.target.value && setMonth(e.target.value)} />
             </Field>
-            <Button icon="download" className="mt-3 w-full" onClick={() => download(`/reports/monthly.csv?month=${month}`, `rekap-bulanan-SMC_${month}.csv`)}>
-              Unduh Rekap Bulanan
-            </Button>
+            <div className="mt-3 grid gap-2 sm:grid-cols-2">
+              <Button
+                icon="fileText"
+                loading={busy === 'month-pdf'}
+                onClick={() => download(`/reports/monthly.pdf?month=${month}`, `rekap-bulanan-SMC_${month}.pdf`, 'month-pdf')}
+              >
+                Unduh PDF Resmi
+              </Button>
+              <Button
+                variant="secondary"
+                icon="download"
+                loading={busy === 'month-csv'}
+                onClick={() => download(`/reports/monthly.csv?month=${month}`, `rekap-bulanan-SMC_${month}.csv`, 'month-csv')}
+              >
+                Unduh Excel (CSV)
+              </Button>
+            </div>
+            <p className="mt-2 text-xs text-slate-500">PDF resmi dilengkapi kolom tanda tangan Manager Mal SMC.</p>
           </Card>
         )}
       </div>

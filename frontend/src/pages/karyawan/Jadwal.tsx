@@ -68,6 +68,12 @@ export default function Jadwal() {
                     Absen {SLOT_LABEL[sl.type]}: {sl.windowStart}–{sl.windowEnd}
                   </li>
                 ))}
+                {s.breakConfig?.enabled && (
+                  <li>
+                    Istirahat bergantian: mulai antara {s.breakConfig.windowStart}–{s.breakConfig.windowEnd}, maks.{' '}
+                    {s.breakConfig.maxMinutes} menit (+{s.breakConfig.toleranceMinutes} menit toleransi). Absen saat mulai & saat kembali.
+                  </li>
+                )}
               </ul>
             </div>
           ))}

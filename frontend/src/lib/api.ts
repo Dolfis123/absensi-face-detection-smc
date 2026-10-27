@@ -1,5 +1,6 @@
 export type Role = 'SUPER_ADMIN' | 'KOORDINATOR' | 'KARYAWAN';
-export type SlotType = 'MASUK' | 'ISTIRAHAT' | 'PULANG';
+// ISTIRAHAT = mulai istirahat, KEMBALI = selesai istirahat
+export type SlotType = 'MASUK' | 'ISTIRAHAT' | 'KEMBALI' | 'PULANG';
 export type DayStatus = 'TEPAT_WAKTU' | 'TERLAMBAT' | 'ALFA' | 'IZIN' | 'SAKIT' | 'CUTI' | 'LIBUR' | 'OFF' | 'BELUM';
 
 export interface PublicUser {
@@ -23,6 +24,25 @@ export interface Shift {
   startTime: string;
   endTime: string;
   slots: { id: number; type: SlotType; windowStart: string; windowEnd: string }[];
+  breakConfig: BreakConfig | null;
+}
+
+/** Istirahat bergantian: mulai kapan saja di [windowStart, windowEnd], maks. maxMinutes + toleranceMinutes. */
+export interface BreakConfig {
+  enabled: boolean;
+  windowStart: string;
+  windowEnd: string;
+  maxMinutes: number;
+  toleranceMinutes: number;
+}
+
+export interface BreakInfo {
+  start: string | null;
+  end: string | null;
+  minutes: number | null;
+  over: boolean;
+  missingReturn: boolean;
+  onBreak: boolean;
 }
 
 export interface DayRecord {
@@ -32,6 +52,7 @@ export interface DayRecord {
   status: DayStatus;
   note: string | null;
   slots: Partial<Record<SlotType, { time: string; status: string; source: string }>>;
+  break: BreakInfo | null;
 }
 
 export interface Summary {
@@ -44,6 +65,8 @@ export interface Summary {
   alfa: number;
   libur: number;
   hariKerja: number;
+  istirahatLebih: number;
+  lupaKembali: number;
 }
 
 export interface EmployeeRecap {

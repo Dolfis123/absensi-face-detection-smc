@@ -1,6 +1,7 @@
 import bcrypt from 'bcryptjs';
 import { env } from './config/env';
-import { GeofenceSetting, Shift, ShiftSlot, User, sequelize } from './models';
+import { GeofenceSetting, Shift, ShiftBreak, ShiftSlot, User, sequelize } from './models';
+import { runMigrations } from './migrations';
 import { loadSettings } from './services/settings';
 
 const SHIFTS = [
@@ -11,9 +12,10 @@ const SHIFTS = [
     endTime: '16:00',
     slots: [
       { type: 'MASUK', windowStart: '07:30', windowEnd: '08:00', sortOrder: 1 },
-      { type: 'ISTIRAHAT', windowStart: '12:00', windowEnd: '13:00', sortOrder: 2 },
       { type: 'PULANG', windowStart: '16:00', windowEnd: '16:30', sortOrder: 3 },
     ],
+    // Istirahat bergantian: dua gelombang @ 1 jam di rentang 12:00–14:00
+    break: { enabled: true, windowStart: '12:00', windowEnd: '14:00', maxMinutes: 60, toleranceMinutes: 15 },
   },
   {
     code: 'SHIFT_2',
@@ -24,6 +26,8 @@ const SHIFTS = [
       { type: 'MASUK', windowStart: '15:30', windowEnd: '16:00', sortOrder: 1 },
       { type: 'PULANG', windowStart: '23:00', windowEnd: '23:30', sortOrder: 2 },
     ],
+    // Nonaktif secara bawaan (rancangan awal Shift 2 hanya absen Masuk & Pulang)
+    break: { enabled: false, windowStart: '18:00', windowEnd: '20:00', maxMinutes: 30, toleranceMinutes: 15 },
   },
 ] as const;
 
@@ -68,11 +72,12 @@ async function installTriggers() {
 }
 
 async function seedShifts() {
-  for (const { slots, ...shift } of SHIFTS) {
+  for (const { slots, break: breakDefaults, ...shift } of SHIFTS) {
     const [row] = await Shift.findOrCreate({ where: { code: shift.code }, defaults: shift });
     for (const slot of slots) {
       await ShiftSlot.findOrCreate({ where: { shiftId: row.id, type: slot.type }, defaults: { ...slot, shiftId: row.id } });
     }
+    await ShiftBreak.findOrCreate({ where: { shiftId: row.id }, defaults: { ...breakDefaults, shiftId: row.id } });
   }
 }
 
@@ -102,6 +107,7 @@ export async function bootstrap() {
   // Untuk produksi disarankan memakai migrasi (sequelize-cli); sync() hanya membuat tabel yang belum ada.
   await sequelize.sync();
   await installTriggers();
+  await runMigrations();
   await seedShifts();
   await seedSuperAdmin();
   await seedGeofence();

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { DayRecord, DayStatus, errMsg, Summary } from '../lib/api';
+import { DayRecord, DayStatus, errMsg, SlotType, Summary } from '../lib/api';
 import { fmtDate, REQUEST_STATUS, STATUS_STYLE, StatusStyle } from '../lib/format';
 import { Badge, Table, Td, Th } from './ui';
 
@@ -23,11 +23,13 @@ const SUMMARY_ITEMS: { key: keyof Summary; label: string; bar: string }[] = [
   { key: 'sakit', label: 'Sakit', bar: 'bg-violet-500' },
   { key: 'cuti', label: 'Cuti', bar: 'bg-indigo-500' },
   { key: 'alfa', label: 'Alfa', bar: 'bg-rose-500' },
+  { key: 'istirahatLebih', label: 'Istirahat Lebih', bar: 'bg-orange-500' },
+  { key: 'lupaKembali', label: 'Lupa Absen Kembali', bar: 'bg-slate-400' },
 ];
 
 export function SummaryGrid({ summary }: { summary: Summary }) {
   return (
-    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+    <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 xl:grid-cols-8">
       {SUMMARY_ITEMS.map((i) => (
         <div key={i.key} className="relative overflow-hidden rounded-2xl border border-slate-200/80 bg-white p-4 shadow-card">
           <span className={`absolute inset-y-0 left-0 w-1 ${i.bar}`} />
@@ -38,6 +40,34 @@ export function SummaryGrid({ summary }: { summary: Summary }) {
           </div>
         </div>
       ))}
+    </div>
+  );
+}
+
+export const SlotTime = ({ d, slot }: { d: DayRecord; slot: SlotType }) => {
+  const s = d.slots[slot];
+  if (!s) return <span className="text-slate-300">—</span>;
+  return (
+    <span className="font-mono text-xs text-slate-700">
+      {s.time.slice(0, 5)}
+      {s.source === 'CORRECTION' && <span title="Hasil koreksi admin"> *</span>}
+    </span>
+  );
+};
+
+/** Jam mulai–selesai istirahat, durasi, dan penanda Istirahat lebih / Lupa kembali / Sedang istirahat. */
+export function BreakCell({ d }: { d: DayRecord }) {
+  const b = d.break;
+  if (!b || (!b.start && !b.end)) return <span className="text-slate-300">—</span>;
+  return (
+    <div className="flex flex-wrap items-center gap-1.5">
+      <span className="font-mono text-xs text-slate-700">
+        <SlotTime d={d} slot="ISTIRAHAT" /> – {b.end ? <SlotTime d={d} slot="KEMBALI" /> : '…'}
+      </span>
+      {b.minutes !== null && <span className={`text-xs ${b.over ? 'font-semibold text-orange-600' : 'text-slate-500'}`}>({b.minutes} mnt)</span>}
+      {b.over && <Badge className="bg-orange-50 text-orange-700 ring-1 ring-orange-600/20">Istirahat lebih</Badge>}
+      {b.missingReturn && <Badge className="bg-slate-100 text-slate-600 ring-1 ring-slate-500/15">Lupa absen kembali</Badge>}
+      {b.onBreak && <Badge className="bg-violet-50 text-violet-700 ring-1 ring-violet-600/15">Sedang istirahat</Badge>}
     </div>
   );
 }
@@ -65,12 +95,15 @@ export function DaysTable({ days, hideOff = true }: { days: DayRecord[]; hideOff
             <Td>
               <StatusBadge status={d.status} />
             </Td>
-            {(['MASUK', 'ISTIRAHAT', 'PULANG'] as const).map((s) => (
-              <Td key={s} className="font-mono text-xs">
-                {d.slots[s]?.time ?? '—'}
-                {d.slots[s]?.source === 'CORRECTION' && <span title="Hasil koreksi admin"> *</span>}
-              </Td>
-            ))}
+            <Td className="font-mono text-xs">
+              <SlotTime d={d} slot="MASUK" />
+            </Td>
+            <Td>
+              <BreakCell d={d} />
+            </Td>
+            <Td className="font-mono text-xs">
+              <SlotTime d={d} slot="PULANG" />
+            </Td>
             <Td className="max-w-[16rem] truncate text-xs text-slate-500">{d.note ?? ''}</Td>
           </tr>
         ))}

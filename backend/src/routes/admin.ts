@@ -11,13 +11,14 @@ import {
   Holiday,
   SLOT_TYPES,
   Shift,
+  ShiftBreak,
   ShiftChangeLog,
   User,
   sequelize,
 } from '../models';
 import { applyCorrection } from '../services/correctionService';
 import { getLateTolerance, saveLateTolerance } from '../services/settings';
-import { loadShifts, SlotInput, validateShiftTimes } from '../services/shiftService';
+import { BreakInput, loadShifts, SlotInput, validateShiftTimes } from '../services/shiftService';
 import { enrollWithDuplicateCheck } from '../services/faceEnrollment';
 import { ah, HttpError } from '../utils/http';
 import { DATE_RE, eachDate, witNow } from '../utils/time';
@@ -223,10 +224,24 @@ router.post(
 
 // ─────────────── Pengaturan shift & jam absensi ───────────────
 const hhmm = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Format jam harus HH:MM');
-const snapshot = (startTime: string, endTime: string, slots: SlotInput[]) => ({
+const snapshot = (startTime: string, endTime: string, slots: SlotInput[], b: BreakInput | null) => ({
   startTime,
   endTime,
   slots: slots.map(({ type, windowStart, windowEnd }) => ({ type, windowStart, windowEnd })),
+  break: b && {
+    enabled: b.enabled,
+    windowStart: b.windowStart,
+    windowEnd: b.windowEnd,
+    maxMinutes: b.maxMinutes,
+    toleranceMinutes: b.toleranceMinutes,
+  },
+});
+const breakSchema = z.object({
+  enabled: z.boolean(),
+  windowStart: hhmm,
+  windowEnd: hhmm,
+  maxMinutes: z.number().int().min(5, 'Durasi istirahat minimal 5 menit').max(240),
+  toleranceMinutes: z.number().int().min(0).max(120),
 });
 
 router.get(
@@ -252,6 +267,7 @@ router.put(
         startTime: hhmm,
         endTime: hhmm,
         slots: z.array(z.object({ type: z.enum(SLOT_TYPES), windowStart: hhmm, windowEnd: hhmm })).min(1),
+        break: breakSchema,
       })
       .parse(req.body);
     const shift = (await loadShifts()).get(Number(req.params.id));
@@ -259,11 +275,11 @@ router.put(
     if (body.slots.length !== shift.slots.length || shift.slots.some((s, i) => body.slots[i].type !== s.type)) {
       throw new HttpError(400, 'Jenis dan urutan slot absen tidak boleh diubah, hanya jamnya');
     }
-    const problem = validateShiftTimes(shift.name, body.startTime, body.endTime, body.slots, getLateTolerance());
+    const problem = validateShiftTimes(shift.name, body.startTime, body.endTime, body.slots, getLateTolerance(), body.break);
     if (problem) throw new HttpError(400, problem);
 
-    const before = snapshot(shift.startTime, shift.endTime, shift.slots);
-    const after = snapshot(body.startTime, body.endTime, body.slots);
+    const before = snapshot(shift.startTime, shift.endTime, shift.slots, shift.breakConfig);
+    const after = snapshot(body.startTime, body.endTime, body.slots, body.break);
     if (JSON.stringify(before) === JSON.stringify(after)) return res.json({ changed: false });
 
     await sequelize.transaction(async (transaction) => {
@@ -271,6 +287,7 @@ router.put(
       for (const [i, slot] of shift.slots.entries()) {
         await slot.update({ windowStart: body.slots[i].windowStart, windowEnd: body.slots[i].windowEnd }, { transaction });
       }
+      await ShiftBreak.upsert({ shiftId: shift.id, ...body.break }, { transaction });
       await ShiftChangeLog.create({ actorId: currentUser(req).id, target: shift.name, before, after }, { transaction });
     });
     res.json({ changed: true });
@@ -283,7 +300,7 @@ router.put(
     const { minutes } = z.object({ minutes: z.number().int().min(0).max(240) }).parse(req.body);
     // Toleransi baru tidak boleh membuat jendela Masuk bertabrakan dengan slot berikutnya di shift mana pun
     for (const s of (await loadShifts()).values()) {
-      const problem = validateShiftTimes(s.name, s.startTime, s.endTime, s.slots, minutes);
+      const problem = validateShiftTimes(s.name, s.startTime, s.endTime, s.slots, minutes, s.breakConfig);
       if (problem) throw new HttpError(400, problem);
     }
     if (minutes !== getLateTolerance()) await saveLateTolerance(minutes, currentUser(req).id);

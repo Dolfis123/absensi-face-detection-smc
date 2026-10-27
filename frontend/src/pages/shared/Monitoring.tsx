@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { StatusBadge, useLoad } from '../../components/attendance';
+import { BreakCell, SlotTime, StatusBadge, useLoad } from '../../components/attendance';
 import { Icon } from '../../components/icons';
 import { Alert, Card, cx, Empty, Loading, PageHeader, PersonCell, SearchInput, Table, Td, Th } from '../../components/ui';
 import { api, DayRecord, DayStatus } from '../../lib/api';
@@ -14,7 +14,7 @@ const ORDER: DayStatus[] = ['TEPAT_WAKTU', 'TERLAMBAT', 'BELUM', 'ALFA', 'IZIN',
 
 export default function Monitoring() {
   const { data, error, loading, reload } = useLoad(() => api.get<TodayResponse>('/monitor/today'));
-  const [filter, setFilter] = useState<DayStatus | 'ALL'>('ALL');
+  const [filter, setFilter] = useState<DayStatus | 'ALL' | 'BREAK'>('ALL');
   const [q, setQ] = useState('');
 
   useEffect(() => {
@@ -27,13 +27,14 @@ export default function Monitoring() {
     acc[r.status] = (acc[r.status] ?? 0) + 1;
     return acc;
   }, {});
+  const onBreak = rows.filter((r) => r.break?.onBreak).length;
   const needle = q.trim().toLowerCase();
   const visible = rows
-    .filter((r) => filter === 'ALL' || r.status === filter)
+    .filter((r) => filter === 'ALL' || (filter === 'BREAK' ? r.break?.onBreak : r.status === filter))
     .filter((r) => !needle || r.user.fullName.toLowerCase().includes(needle) || r.user.nik.toLowerCase().includes(needle))
     .sort((a, b) => ORDER.indexOf(a.status) - ORDER.indexOf(b.status));
 
-  const tab = (key: DayStatus | 'ALL', label: string, n: number, dot?: string) => (
+  const tab = (key: DayStatus | 'ALL' | 'BREAK', label: string, n: number, dot?: string) => (
     <button
       key={key}
       onClick={() => setFilter(key)}
@@ -69,6 +70,7 @@ export default function Monitoring() {
         <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div className="-mx-1 flex gap-1 overflow-x-auto rounded-xl bg-slate-100 p-1">
             {tab('ALL', 'Semua', rows.length)}
+            {onBreak > 0 && tab('BREAK', 'Sedang istirahat', onBreak, 'bg-violet-500')}
             {ORDER.filter((s) => counts[s]).map((s) => tab(s, STATUS_STYLE[s].label, counts[s] ?? 0, STATUS_STYLE[s].dot))}
           </div>
           <SearchInput value={q} onChange={setQ} placeholder="Cari nama atau NIK…" className="lg:w-64" />
@@ -101,11 +103,15 @@ export default function Monitoring() {
                   <Td>
                     <StatusBadge status={r.status} />
                   </Td>
-                  {(['MASUK', 'ISTIRAHAT', 'PULANG'] as const).map((s) => (
-                    <Td key={s} className="font-mono text-xs text-slate-700">
-                      {r.slots[s]?.time.slice(0, 5) ?? <span className="text-slate-300">—</span>}
-                    </Td>
-                  ))}
+                  <Td>
+                    <SlotTime d={r} slot="MASUK" />
+                  </Td>
+                  <Td>
+                    <BreakCell d={r} />
+                  </Td>
+                  <Td>
+                    <SlotTime d={r} slot="PULANG" />
+                  </Td>
                   <Td>
                     <a
                       className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-xs font-medium text-emerald-700 hover:bg-emerald-50"

@@ -8,8 +8,18 @@ export const ROLE_LABEL: Record<Role, string> = {
 
 export const SLOT_LABEL: Record<SlotType, string> = {
   MASUK: 'Masuk',
-  ISTIRAHAT: 'Istirahat',
+  ISTIRAHAT: 'Mulai Istirahat',
+  KEMBALI: 'Selesai Istirahat',
   PULANG: 'Pulang',
+};
+
+/** Urutan tampilan absen dalam sehari. */
+export const SLOT_ORDER: SlotType[] = ['MASUK', 'ISTIRAHAT', 'KEMBALI', 'PULANG'];
+
+export const fmtMinutes = (m: number) => {
+  if (m < 60) return `${m} menit`;
+  const h = Math.floor(m / 60);
+  return m % 60 ? `${h} jam ${m % 60} menit` : `${h} jam`;
 };
 
 export interface StatusStyle {

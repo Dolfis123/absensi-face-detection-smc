@@ -4,8 +4,9 @@ import { Op } from 'sequelize';
 import { z } from 'zod';
 import { currentUser, requireRole } from '../middleware/auth';
 import { leaveUploadDir } from '../middleware/upload';
-import { AttendanceIssue, Holiday, LeaveRequest, Shift, ShiftSlot, User } from '../models';
+import { AttendanceIssue, Holiday, LeaveRequest, Shift, ShiftBreak, ShiftSlot, User } from '../models';
 import { sendCsv } from '../services/csv';
+import { dayNotes, fmtLongDate, fmtMonth, sendAttendancePdf } from '../services/pdfReport';
 import { buildRecap } from '../services/recapService';
 import { getLateTolerance } from '../services/settings';
 import { ah, HttpError } from '../utils/http';
@@ -23,7 +24,10 @@ router.get(
   ah(async (_req, res) => {
     res.json(
       await Shift.findAll({
-        include: [{ model: ShiftSlot, as: 'slots' }],
+        include: [
+          { model: ShiftSlot, as: 'slots' },
+          { model: ShiftBreak, as: 'breakConfig' },
+        ],
         order: [
           ['id', 'ASC'],
           [{ model: ShiftSlot, as: 'slots' }, 'sortOrder', 'ASC'],
@@ -120,14 +124,16 @@ router.get(
           STATUS_LABEL[d.status],
           d.slots.MASUK?.time ?? '',
           d.slots.ISTIRAHAT?.time ?? '',
+          d.slots.KEMBALI?.time ?? '',
+          d.break?.minutes ?? '',
           d.slots.PULANG?.time ?? '',
-          d.note ?? '',
+          dayNotes(d).join('; '),
         ]),
     );
     sendCsv(
       res,
       `absensi-detail_${from}_${to}.csv`,
-      ['Tanggal', 'NIK', 'Nama', 'Shift', 'Status', 'Masuk', 'Istirahat', 'Pulang', 'Keterangan'],
+      ['Tanggal', 'NIK', 'Nama', 'Shift', 'Status', 'Masuk', 'Mulai Istirahat', 'Selesai Istirahat', 'Durasi Istirahat (menit)', 'Pulang', 'Keterangan'],
       rows,
     );
   }),
@@ -144,7 +150,7 @@ router.get(
     sendCsv(
       res,
       `rekap-bulanan-SMC_${month}.csv`,
-      ['NIK', 'Nama', 'Hari Kerja', 'Hadir', 'Tepat Waktu', 'Terlambat', 'Izin', 'Sakit', 'Cuti', 'Alfa', 'Libur'],
+      ['NIK', 'Nama', 'Hari Kerja', 'Hadir', 'Tepat Waktu', 'Terlambat', 'Izin', 'Sakit', 'Cuti', 'Alfa', 'Libur', 'Istirahat Lebih', 'Lupa Absen Kembali', 'Kehadiran (%)'],
       recap.map(({ user, summary: s }) => [
         user.nik,
         user.fullName,
@@ -157,8 +163,43 @@ router.get(
         s.cuti,
         s.alfa,
         s.libur,
+        s.istirahatLebih,
+        s.lupaKembali,
+        s.hariKerja ? Math.round((s.hadir / s.hariKerja) * 100) : '',
       ]),
     );
+  }),
+);
+
+// ─── Laporan PDF ───
+router.get(
+  '/reports/detail.pdf',
+  reviewers,
+  ah(async (req, res) => {
+    const { from, to } = rangeQuery.parse(req.query);
+    sendAttendancePdf(res, await buildRecap(from, to), {
+      title: 'Laporan Kehadiran Karyawan Parkir',
+      period: `${fmtLongDate(from)} – ${fmtLongDate(to)}`,
+      filename: `laporan-kehadiran_${from}_${to}.pdf`,
+      generatedBy: currentUser(req).fullName,
+      signature: false,
+    });
+  }),
+);
+
+router.get(
+  '/reports/monthly.pdf',
+  requireRole('SUPER_ADMIN'),
+  ah(async (req, res) => {
+    const month = z.string().regex(MONTH_RE).parse(req.query.month);
+    const { from, to } = monthRange(month);
+    sendAttendancePdf(res, await buildRecap(from, to), {
+      title: 'Rekap Kehadiran Bulanan',
+      period: fmtMonth(month),
+      filename: `rekap-bulanan-SMC_${month}.pdf`,
+      generatedBy: currentUser(req).fullName,
+      signature: true,
+    });
   }),
 );
 

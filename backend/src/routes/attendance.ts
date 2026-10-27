@@ -107,14 +107,14 @@ router.post(
     if (!shift) throw new HttpError(500, 'Data shift tidak ditemukan');
 
     const existing = await Attendance.findAll({ where: { userId: user.id, date: now.date, active: true } });
-    const resolution = resolveActiveSlot(shift, now.minutes, new Set(existing.map((a) => a.slotType)));
+    const resolution = resolveActiveSlot(shift, now.minutes, new Map(existing.map((a) => [a.slotType, a])));
     if (!resolution.ok) throw new HttpError(409, `${user.fullName}: ${resolution.reason}`);
 
     const record = await Attendance.create({
       userId: user.id,
       shiftId: shift.id,
       date: now.date,
-      slotType: resolution.slot.type,
+      slotType: resolution.slotType,
       status: resolution.status,
       recordedAt: now.instant,
       localTime: now.time,
@@ -135,6 +135,12 @@ router.post(
       date: record.date,
       time: record.localTime,
       distanceMeters: record.distanceMeters,
+      // Hanya untuk Selesai Istirahat: lama istirahat & batas yang berlaku
+      breakMinutes: resolution.breakMinutes ?? null,
+      breakLimitMinutes:
+        resolution.slotType === 'KEMBALI' && shift.breakConfig
+          ? shift.breakConfig.maxMinutes + shift.breakConfig.toleranceMinutes
+          : null,
     });
   }),
 );

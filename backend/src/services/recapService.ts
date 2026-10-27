@@ -9,7 +9,8 @@ import {
   User,
 } from '../models';
 import { eachDate, witNow } from '../utils/time';
-import { loadShifts, slotDeadline } from './shiftService';
+import { getBreakTrackingSince } from './settings';
+import { activeBreak, breakReturnDeadline, loadShifts, slotDeadline } from './shiftService';
 
 export type DayStatus =
   | 'TEPAT_WAKTU'
@@ -29,6 +30,17 @@ export interface DayRecord {
   status: DayStatus;
   note: string | null;
   slots: Partial<Record<SlotType, { time: string; status: string; source: string }>>;
+  /** Ringkasan istirahat bergantian hari itu; null bila tidak ada istirahat. */
+  break: BreakInfo | null;
+}
+
+export interface BreakInfo {
+  start: string | null; // HH:MM:SS
+  end: string | null;
+  minutes: number | null;
+  over: boolean; // melewati durasi maksimal + toleransi
+  missingReturn: boolean; // mulai istirahat tapi tidak absen kembali sampai batas
+  onBreak: boolean; // hari ini, sedang istirahat
 }
 
 export interface Summary {
@@ -41,6 +53,8 @@ export interface Summary {
   alfa: number;
   libur: number;
   hariKerja: number;
+  istirahatLebih: number;
+  lupaKembali: number;
 }
 
 export interface EmployeeRecap {
@@ -59,7 +73,11 @@ const emptySummary = (): Summary => ({
   alfa: 0,
   libur: 0,
   hariKerja: 0,
+  istirahatLebih: 0,
+  lupaKembali: 0,
 });
+
+const toMinutes = (hhmmss: string) => Number(hhmmss.slice(0, 2)) * 60 + Number(hhmmss.slice(3, 5));
 
 /**
  * Menyusun status kehadiran per hari. Prioritas: Libur → Izin/Sakit/Cuti (disetujui)
@@ -98,6 +116,7 @@ export async function buildRecap(from: string, to: string, userIds?: number[]): 
   }
   const now = witNow();
   const dates = eachDate(from, to);
+  const trackingSince = getBreakTrackingSince();
 
   return users.map((user) => {
     const summary = emptySummary();
@@ -109,7 +128,7 @@ export async function buildRecap(from: string, to: string, userIds?: number[]): 
       for (const a of atts) slots[a.slotType] = { time: a.localTime, status: a.status, source: a.source };
 
       const leave = leaves.find((l) => l.userId === user.id && l.startDate <= date && l.endDate >= date);
-      const base = { date, shiftId, shiftName: shift?.name ?? null, slots };
+      const base = { date, shiftId, shiftName: shift?.name ?? null, slots, break: null as BreakInfo | null };
 
       if (holidayByDate.has(date)) {
         summary.libur++;
@@ -123,6 +142,23 @@ export async function buildRecap(from: string, to: string, userIds?: number[]): 
       if (!shift) return { ...base, status: 'OFF', note: null };
 
       summary.hariKerja++;
+      const start = slots.ISTIRAHAT?.time ?? null;
+      const end = slots.KEMBALI?.time ?? null;
+      const b = activeBreak(shift);
+      if (start || end || b) {
+        const returnBy = b ? breakReturnDeadline(b) : null;
+        const pastReturn = date < now.date || (date === now.date && returnBy !== null && now.minutes > returnBy);
+        base.break = {
+          start,
+          end,
+          minutes: start && end ? Math.max(0, toMinutes(end) - toMinutes(start)) : null,
+          over: slots.KEMBALI?.status === 'TERLAMBAT',
+          missingReturn: !!start && !end && date >= trackingSince && pastReturn,
+          onBreak: date === now.date && !!start && !end && !pastReturn,
+        };
+        if (base.break.over) summary.istirahatLebih++;
+        if (base.break.missingReturn) summary.lupaKembali++;
+      }
       const masuk = atts.find((a) => a.slotType === 'MASUK');
       if (masuk) {
         summary.hadir++;

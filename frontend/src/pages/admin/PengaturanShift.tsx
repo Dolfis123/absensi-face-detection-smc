@@ -3,7 +3,7 @@ import { useLoad } from '../../components/attendance';
 import { useFeedback } from '../../components/feedback';
 import { Icon } from '../../components/icons';
 import { Alert, Avatar, Button, Card, cx, Empty, Field, Input, Loading, PageHeader } from '../../components/ui';
-import { api, errMsg, Shift, SlotType } from '../../lib/api';
+import { api, BreakConfig, errMsg, Shift, SlotType } from '../../lib/api';
 import { SLOT_LABEL } from '../../lib/format';
 
 interface SlotDraft {
@@ -15,7 +15,10 @@ interface ShiftDraft {
   startTime: string;
   endTime: string;
   slots: SlotDraft[];
+  break: BreakConfig;
 }
+
+const DEFAULT_BREAK: BreakConfig = { enabled: false, windowStart: '12:00', windowEnd: '14:00', maxMinutes: 60, toleranceMinutes: 15 };
 interface ChangeLog {
   id: number;
   target: string;
@@ -35,12 +38,29 @@ const toDraft = (s: Shift): ShiftDraft => ({
   startTime: s.startTime,
   endTime: s.endTime,
   slots: s.slots.map(({ type, windowStart, windowEnd }) => ({ type, windowStart, windowEnd })),
+  break: s.breakConfig
+    ? {
+        enabled: s.breakConfig.enabled,
+        windowStart: s.breakConfig.windowStart,
+        windowEnd: s.breakConfig.windowEnd,
+        maxMinutes: s.breakConfig.maxMinutes,
+        toleranceMinutes: s.breakConfig.toleranceMinutes,
+      }
+    : DEFAULT_BREAK,
 });
+const hhmmOf = (m: number) => `${String(Math.floor(m / 60) % 24).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
 const fmtMinutes = (m: number) => (m % 60 === 0 && m ? `${m / 60} jam` : `${m} menit`);
 
 /** Pratinjau jam kerja, jendela absen, dan zona terlambat pada garis waktu. */
 function Timeline({ draft, tolerance }: { draft: ShiftDraft; tolerance: number }) {
-  const points = [toMin(draft.startTime), toMin(draft.endTime), ...draft.slots.flatMap((s) => [toMin(s.windowStart), toMin(s.windowEnd)])];
+  const b = draft.break.enabled ? draft.break : null;
+  const breakReturnBy = b ? toMin(b.windowEnd) + b.maxMinutes + b.toleranceMinutes : 0;
+  const points = [
+    toMin(draft.startTime),
+    toMin(draft.endTime),
+    ...draft.slots.flatMap((s) => [toMin(s.windowStart), toMin(s.windowEnd)]),
+    ...(b ? [toMin(b.windowStart), breakReturnBy] : []),
+  ];
   const lo = Math.max(0, Math.floor(Math.min(...points) / 60) * 60 - 60);
   const masuk = draft.slots.find((s) => s.type === 'MASUK');
   const hi = Math.min(24 * 60, Math.ceil(Math.max(...points, masuk ? toMin(masuk.windowEnd) + tolerance : 0) / 60) * 60 + 60);
@@ -73,6 +93,20 @@ function Timeline({ draft, tolerance }: { draft: ShiftDraft; tolerance: number }
             )}
           </div>
         ))}
+        {b && (
+          <>
+            <div
+              className="absolute top-7 h-6 rounded-md bg-violet-500"
+              style={{ left: pct(toMin(b.windowStart)), width: width(toMin(b.windowStart), toMin(b.windowEnd)) }}
+              title={`Mulai istirahat ${b.windowStart}–${b.windowEnd}`}
+            />
+            <div
+              className="absolute top-7 h-6 rounded-md bg-violet-300/80"
+              style={{ left: pct(toMin(b.windowEnd)), width: width(toMin(b.windowEnd), breakReturnBy) }}
+              title={`Batas terakhir selesai istirahat ${hhmmOf(breakReturnBy)}`}
+            />
+          </>
+        )}
       </div>
       <div className="relative mt-1 h-4 text-[10px] text-slate-400">
         {ticks.map((t) => (
@@ -85,7 +119,56 @@ function Timeline({ draft, tolerance }: { draft: ShiftDraft; tolerance: number }
         <span className="flex items-center gap-1.5"><span className="h-2.5 w-4 rounded-full bg-brand-200" />Jam kerja</span>
         <span className="flex items-center gap-1.5"><span className="h-2.5 w-4 rounded bg-emerald-500" />Jendela absen (tepat waktu)</span>
         <span className="flex items-center gap-1.5"><span className="h-2.5 w-4 rounded bg-amber-400" />Masih diterima sebagai Terlambat</span>
+        {b && (
+          <span className="flex items-center gap-1.5">
+            <span className="h-2.5 w-4 rounded bg-violet-500" />
+            Mulai istirahat
+            <span className="ml-1 h-2.5 w-4 rounded bg-violet-300" />
+            batas selesai istirahat
+          </span>
+        )}
       </div>
+    </div>
+  );
+}
+
+/** Pengaturan istirahat bergantian: rentang mulai, durasi maksimal, toleransi. */
+function BreakEditor({ value, onChange }: { value: BreakConfig; onChange: (v: BreakConfig) => void }) {
+  const set = <K extends keyof BreakConfig>(k: K, v: BreakConfig[K]) => onChange({ ...value, [k]: v });
+  const returnBy = toMin(value.windowEnd) + value.maxMinutes + value.toleranceMinutes;
+  return (
+    <div className={cx('rounded-xl border p-4', value.enabled ? 'border-violet-200 bg-violet-50/40' : 'border-slate-200')}>
+      <label className="flex cursor-pointer items-start gap-3">
+        <input type="checkbox" className="mt-1 h-4 w-4 accent-violet-600" checked={value.enabled} onChange={(e) => set('enabled', e.target.checked)} />
+        <span>
+          <span className="block text-sm font-semibold text-slate-900">Istirahat bergantian</span>
+          <span className="block text-xs text-slate-500">
+            Karyawan absen <b>Mulai Istirahat</b> saat meninggalkan pos dan <b>Selesai Istirahat</b> saat kembali. Gelombang diatur sendiri di lapangan.
+          </span>
+        </span>
+      </label>
+      {value.enabled && (
+        <div className="mt-4 space-y-3">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <Field label="Mulai paling awal">
+              <Input type="time" value={value.windowStart} onChange={(e) => e.target.value && set('windowStart', e.target.value)} />
+            </Field>
+            <Field label="Mulai paling akhir">
+              <Input type="time" value={value.windowEnd} onChange={(e) => e.target.value && set('windowEnd', e.target.value)} />
+            </Field>
+            <Field label="Durasi maks. (menit)">
+              <Input type="number" min={5} max={240} step={5} value={value.maxMinutes} onChange={(e) => set('maxMinutes', Math.max(0, Number(e.target.value)))} />
+            </Field>
+            <Field label="Toleransi (menit)">
+              <Input type="number" min={0} max={120} step={5} value={value.toleranceMinutes} onChange={(e) => set('toleranceMinutes', Math.max(0, Number(e.target.value)))} />
+            </Field>
+          </div>
+          <p className="text-xs text-slate-600">
+            Istirahat lebih dari <b>{value.maxMinutes + value.toleranceMinutes} menit</b> ditandai <b>Istirahat lebih</b>. Absen Selesai Istirahat diterima
+            paling lambat <b>{hhmmOf(returnBy)}</b>. Lupa absen kembali dapat dibetulkan lewat menu Koreksi.
+          </p>
+        </div>
+      )}
     </div>
   );
 }
@@ -130,7 +213,9 @@ function ShiftEditor({ shift, tolerance, onSaved }: { shift: Shift; tolerance: n
       title={
         <span className="flex items-center gap-2">
           {shift.name}
-          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-500">{shift.slots.length}x absen</span>
+          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-500">
+            {draft.slots.length + (draft.break.enabled ? 2 : 0)}x absen
+          </span>
         </span>
       }
       subtitle={workHours > 0 ? `${workHours % 1 ? workHours.toFixed(1) : workHours} jam kerja` : undefined}
@@ -183,6 +268,8 @@ function ShiftEditor({ shift, tolerance, onSaved }: { shift: Shift; tolerance: n
             </div>
           ))}
         </div>
+
+        <BreakEditor value={draft.break} onChange={(b) => setDraft((d) => ({ ...d, break: b }))} />
 
         <Timeline draft={draft} tolerance={tolerance} />
       </div>
@@ -265,6 +352,13 @@ function describe(log: ChangeLog) {
       parts.push(`${SLOT_LABEL[s.type]} ${b.windowStart}–${b.windowEnd} → ${s.windowStart}–${s.windowEnd}`);
     }
   });
+  const bb = log.before.break;
+  const ab = log.after.break;
+  if (ab && JSON.stringify(bb) !== JSON.stringify(ab)) {
+    const txt = (x?: BreakConfig | null) =>
+      !x || !x.enabled ? 'nonaktif' : `${x.windowStart}–${x.windowEnd}, maks. ${x.maxMinutes}+${x.toleranceMinutes} mnt`;
+    parts.push(`Istirahat ${txt(bb)} → ${txt(ab)}`);
+  }
   return parts.join(' · ');
 }
 
@@ -285,7 +379,7 @@ export default function PengaturanShift() {
           <div className="space-y-6">
             <Alert kind="info">
               Data absen yang sudah tercatat tidak berubah. Jendela absen tidak boleh saling tumpang tindih dan semua jam berada di hari yang sama (tidak
-              melewati 24:00). Jenis slot tiap shift tetap: Shift 1 tiga kali absen, Shift 2 dua kali.
+              melewati 24:00). Absen Masuk & Pulang selalu ada; istirahat bergantian bisa diaktifkan per shift.
             </Alert>
             <ToleranceCard value={data.lateToleranceMinutes} onSaved={reload} />
             <div className="grid gap-6 xl:grid-cols-2">

@@ -70,6 +70,7 @@ export default function BerandaPengawas() {
   const belum = rows.filter((r) => r.status === 'BELUM');
   const alfa = count('ALFA');
   const cuti = count('IZIN', 'SAKIT', 'CUTI');
+  const onBreak = rows.filter((r) => r.break?.onBreak).length;
   const openIssues = data.issues.filter((i) => i.status === 'OPEN' || (isAdmin && i.status === 'ESCALATED'));
   const needFace = data.users.filter((u) => u.role === 'KARYAWAN' && u.isActive && u.faceCount < 3);
 
@@ -118,7 +119,11 @@ export default function BerandaPengawas() {
         <StatCard
           label="Hadir hari ini"
           value={<>{hadir}<span className="text-lg font-semibold text-slate-400"> / {scheduled}</span></>}
-          sub={scheduled ? `${Math.round((hadir / scheduled) * 100)}% dari karyawan yang dijadwalkan` : 'Belum ada jadwal hari ini'}
+          sub={
+            scheduled
+              ? `${Math.round((hadir / scheduled) * 100)}% dari yang dijadwalkan${onBreak ? ` · ${onBreak} sedang istirahat` : ''}`
+              : 'Belum ada jadwal hari ini'
+          }
           icon="userCheck"
           tone="green"
           progress={scheduled ? hadir / scheduled : 0}

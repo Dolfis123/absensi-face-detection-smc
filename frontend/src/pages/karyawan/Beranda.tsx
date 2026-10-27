@@ -2,7 +2,7 @@ import { Link } from 'react-router-dom';
 import { RequestBadge, StatusBadge, SummaryGrid, useLoad } from '../../components/attendance';
 import { Icon } from '../../components/icons';
 import { Alert, Card, cx, Empty, Skeleton } from '../../components/ui';
-import { api, EmployeeRecap, Holiday, LeaveRequest, Shift } from '../../lib/api';
+import { api, EmployeeRecap, Holiday, LeaveRequest, Shift, SlotType } from '../../lib/api';
 import { useAuth } from '../../lib/auth';
 import { useServerClock } from '../../lib/clock';
 import { addDays, fmtDate, greeting, shortDay, SLOT_LABEL } from '../../lib/format';
@@ -58,13 +58,47 @@ export default function BerandaKaryawan() {
   const holiday = sched.holidays.find((h) => h.date === today);
   const blocked = todayRecord && ['IZIN', 'SAKIT', 'CUTI', 'LIBUR'].includes(todayRecord.status);
 
-  const slots = (shift?.slots ?? []).map((s) => {
+  type TileState = 'done' | 'open' | 'upcoming' | 'missed';
+  interface Tile {
+    key: string;
+    type: SlotType;
+    windowText: string;
+    start: number;
+    end: number; // batas terakhir tap
+    done?: { time: string; status: string };
+    state: TileState;
+  }
+  const stateOf = (done: unknown, start: number, end: number): TileState =>
+    done ? 'done' : clock.minutes > end ? 'missed' : clock.minutes >= start ? 'open' : 'upcoming';
+
+  const fixed: Tile[] = (shift?.slots ?? []).map((s) => {
     const start = toMin(s.windowStart);
     const end = toMin(s.windowEnd) + (s.type === 'MASUK' ? lateTolerance : 0);
     const done = todayRecord?.slots[s.type];
-    const state = done ? 'done' : clock.minutes > end ? 'missed' : clock.minutes >= start ? 'open' : 'upcoming';
-    return { ...s, start, end, done, state };
+    return { key: s.type, type: s.type, windowText: `${s.windowStart}–${s.windowEnd} WIT`, start, end, done, state: stateOf(done, start, end) };
   });
+  const brk = shift?.breakConfig?.enabled ? shift.breakConfig : null;
+  const breakTiles: Tile[] = [];
+  if (brk) {
+    const ws = toMin(brk.windowStart);
+    const we = toMin(brk.windowEnd);
+    const started = todayRecord?.slots.ISTIRAHAT;
+    const back = todayRecord?.slots.KEMBALI;
+    const returnBy = we + brk.maxMinutes + brk.toleranceMinutes;
+    breakTiles.push(
+      { key: 'ISTIRAHAT', type: 'ISTIRAHAT', windowText: `Gantian, antara ${brk.windowStart}–${brk.windowEnd}`, start: ws, end: we, done: started, state: stateOf(started, ws, we) },
+      {
+        key: 'KEMBALI',
+        type: 'KEMBALI',
+        windowText: `Maks. ${brk.maxMinutes} menit (+${brk.toleranceMinutes} toleransi)`,
+        start: started ? toMin(started.time) : ws,
+        end: started ? returnBy : we,
+        done: back,
+        state: back ? 'done' : started ? stateOf(undefined, toMin(started.time), returnBy) : stateOf(undefined, ws + 1, we),
+      },
+    );
+  }
+  const slots = [...fixed, ...breakTiles].sort((a, b) => a.start - b.start);
   const openSlot = slots.find((s) => s.state === 'open');
   const nextSlot = slots.find((s) => s.state === 'upcoming');
   const lastLeave = leaves[0];
@@ -81,11 +115,17 @@ export default function BerandaKaryawan() {
   } else if (!shift) {
     headline = 'Tidak ada jadwal hari ini';
     detail = 'Cek menu Jadwal Shift untuk hari kerja berikutnya.';
+  } else if (openSlot?.type === 'KEMBALI' && brk) {
+    headline = 'Anda sedang istirahat';
+    detail = `Absen Selesai Istirahat saat kembali ke pos. Batas ${brk.maxMinutes} menit (+${brk.toleranceMinutes} menit toleransi), sudah berjalan ${countdown(Math.max(0, clock.minutes - openSlot.start)).replace(' lagi', '')}.`;
+  } else if (openSlot?.type === 'ISTIRAHAT') {
+    headline = 'Waktu istirahat bergantian';
+    detail = `Absen Mulai Istirahat saat meninggalkan pos (${openSlot.windowText}). Pastikan ada rekan yang menjaga pos.`;
   } else if (openSlot) {
     headline = `Saatnya Absen ${SLOT_LABEL[openSlot.type]}`;
-    detail = `Jendela dibuka ${openSlot.windowStart}–${openSlot.windowEnd} WIT${openSlot.type === 'MASUK' ? ' (lewat dari itu dihitung terlambat)' : ''}.`;
+    detail = `Jendela dibuka ${openSlot.windowText}${openSlot.type === 'MASUK' ? ' (lewat dari itu dihitung terlambat)' : ''}.`;
   } else if (nextSlot) {
-    headline = `Absen ${SLOT_LABEL[nextSlot.type]} berikutnya pukul ${nextSlot.windowStart}`;
+    headline = `Absen ${SLOT_LABEL[nextSlot.type]} berikutnya pukul ${String(Math.floor(nextSlot.start / 60)).padStart(2, '0')}:${String(nextSlot.start % 60).padStart(2, '0')}`;
     detail = countdown(nextSlot.start - clock.minutes);
   } else {
     headline = 'Absensi hari ini selesai';
@@ -118,10 +158,10 @@ export default function BerandaKaryawan() {
           <p className="mt-1 text-sm text-brand-100/90">{detail}</p>
 
           {slots.length > 0 && !blocked && (
-            <div className="mt-6 grid gap-2 sm:grid-cols-3">
+            <div className={cx('mt-6 grid gap-2 sm:grid-cols-2', slots.length === 4 ? 'xl:grid-cols-4' : 'lg:grid-cols-3')}>
               {slots.map((s) => (
                 <div
-                  key={s.id}
+                  key={s.key}
                   className={cx(
                     'flex items-center gap-3 rounded-2xl p-3 ring-1',
                     s.state === 'done' && 'bg-emerald-400/15 ring-emerald-300/30',
@@ -142,10 +182,14 @@ export default function BerandaKaryawan() {
                     <div className="text-sm font-semibold">Absen {SLOT_LABEL[s.type]}</div>
                     <div className="text-xs text-brand-100/80">
                       {s.done
-                        ? `Tercatat ${s.done.time.slice(0, 5)}${s.done.status === 'TERLAMBAT' ? ' · terlambat' : ''}`
+                        ? s.type === 'KEMBALI'
+                          ? `Tercatat ${s.done.time.slice(0, 5)}${todayRecord?.break?.minutes != null ? ` · ${todayRecord.break.minutes} mnt` : ''}${s.done.status === 'TERLAMBAT' ? ' · lebih' : ''}`
+                          : `Tercatat ${s.done.time.slice(0, 5)}${s.done.status === 'TERLAMBAT' ? ' · terlambat' : ''}`
                         : s.state === 'missed'
-                          ? 'Terlewat · lapor kendala bila hadir'
-                          : `${s.windowStart}–${s.windowEnd} WIT`}
+                          ? s.type === 'ISTIRAHAT'
+                            ? 'Tidak absen istirahat'
+                            : 'Terlewat · lapor kendala bila hadir'
+                          : s.windowText}
                     </div>
                   </div>
                 </div>

@@ -2,18 +2,33 @@ import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Camera, CameraHandle } from '../components/Camera';
 import { Button } from '../components/ui';
-import { api, errMsg, Geofence } from '../lib/api';
-import { haversine, SLOT_LABEL, STATUS_STYLE } from '../lib/format';
+import { api, errMsg, Geofence, SlotType } from '../lib/api';
+import { fmtMinutes, haversine, SLOT_LABEL, STATUS_STYLE } from '../lib/format';
 
 interface CheckResult {
   message: string;
   employee: { fullName: string; nik: string };
   shift: string;
-  slotType: 'MASUK' | 'ISTIRAHAT' | 'PULANG';
+  slotType: SlotType;
   status: 'TEPAT_WAKTU' | 'TERLAMBAT';
   date: string;
   time: string;
   distanceMeters: number;
+  breakMinutes: number | null;
+  breakLimitMinutes: number | null;
+}
+
+/** Teks status hasil absen; untuk Selesai Istirahat yang dinilai adalah lama istirahat. */
+function resultStatus(r: CheckResult): { label: string; cls: string } {
+  if (r.slotType === 'ISTIRAHAT') return { label: 'Selamat istirahat. Jangan lupa absen saat kembali.', cls: 'bg-violet-50 text-violet-700' };
+  if (r.slotType === 'KEMBALI' && r.breakMinutes !== null) {
+    const over = r.status === 'TERLAMBAT';
+    return {
+      label: `Lama istirahat ${fmtMinutes(r.breakMinutes)}${over ? ` · lebih dari batas ${r.breakLimitMinutes} menit` : ''}`,
+      cls: over ? 'bg-orange-50 text-orange-700' : STATUS_STYLE.TEPAT_WAKTU.cls,
+    };
+  }
+  return STATUS_STYLE[r.status];
 }
 
 interface Position {
@@ -163,9 +178,7 @@ export default function Absen() {
                     <div className="font-mono font-semibold">{result.time}</div>
                   </div>
                 </div>
-                <div className={`mt-3 rounded-xl py-2 text-sm font-bold ${STATUS_STYLE[result.status].cls}`}>
-                  {STATUS_STYLE[result.status].label}
-                </div>
+                <div className={`mt-3 rounded-xl px-3 py-2 text-sm font-bold ${resultStatus(result).cls}`}>{resultStatus(result).label}</div>
               </>
             ) : (
               <>
