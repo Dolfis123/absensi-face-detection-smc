@@ -1,0 +1,78 @@
+import { useLoad } from '../../components/attendance';
+import { Alert, Badge, Card, Empty, Loading, PageHeader } from '../../components/ui';
+import { api, Holiday, Shift } from '../../lib/api';
+import { addDays, fmtDate, SLOT_LABEL, todayWIT } from '../../lib/format';
+
+interface ScheduleResponse {
+  schedules: { date: string; shift: { id: number; name: string; startTime: string; endTime: string } | null }[];
+  holidays: Holiday[];
+}
+
+export default function Jadwal() {
+  const today = todayWIT();
+  const { data, error, loading } = useLoad(() =>
+    Promise.all([
+      api.get<ScheduleResponse>(`/me/schedule?from=${today}&to=${addDays(today, 13)}`),
+      api.get<Shift[]>('/shifts'),
+    ]),
+  );
+
+  if (loading) return <Loading />;
+  if (error || !data) return <Alert>{error}</Alert>;
+  const [sched, shifts] = data;
+  const byDate = new Map(sched.schedules.map((s) => [s.date, s.shift]));
+  const holidays = new Map(sched.holidays.map((h) => [h.date, h.name]));
+  const days = Array.from({ length: 14 }, (_, i) => addDays(today, i));
+
+  return (
+    <>
+      <PageHeader title="Jadwal Shift" subtitle="14 hari ke depan sesuai roster dari Super Admin" />
+      <div className="grid gap-4 lg:grid-cols-3">
+        <Card className="lg:col-span-2">
+          {days.length === 0 ? (
+            <Empty>Belum ada jadwal</Empty>
+          ) : (
+            <ul className="divide-y divide-slate-100">
+              {days.map((d) => {
+                const shift = byDate.get(d);
+                return (
+                  <li key={d} className={`flex items-center justify-between py-2.5 ${d === today ? 'font-semibold' : ''}`}>
+                    <span>
+                      {fmtDate(d)} {d === today && <Badge className="ml-1 bg-brand-100 text-brand-700">Hari ini</Badge>}
+                    </span>
+                    {holidays.has(d) ? (
+                      <Badge className="bg-slate-200 text-slate-700">Libur · {holidays.get(d)}</Badge>
+                    ) : shift ? (
+                      <Badge className={shift.id === shifts[0]?.id ? 'bg-sky-100 text-sky-800' : 'bg-violet-100 text-violet-800'}>
+                        {shift.name} · {shift.startTime}–{shift.endTime}
+                      </Badge>
+                    ) : (
+                      <span className="text-sm text-slate-400">Tidak dijadwalkan</span>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </Card>
+        <Card>
+          <h2 className="mb-3 font-semibold">Jendela Absensi (WIT)</h2>
+          {shifts.map((s) => (
+            <div key={s.id} className="mb-4">
+              <div className="font-medium">
+                {s.name} ({s.startTime}–{s.endTime})
+              </div>
+              <ul className="mt-1 text-sm text-slate-600">
+                {s.slots.map((sl) => (
+                  <li key={sl.id}>
+                    Absen {SLOT_LABEL[sl.type]}: {sl.windowStart}–{sl.windowEnd}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
+        </Card>
+      </div>
+    </>
+  );
+}
