@@ -7,8 +7,14 @@ APP_DIR="/var/www/smc"
 step() { echo -e "\n\033[1;34m==> $*\033[0m"; }
 
 cd "$APP_DIR"
-step "Ambil kode terbaru"
-git pull --ff-only
+if [[ "${SMC_UPDATE_PULLED:-}" != 1 ]]; then
+  step "Ambil kode terbaru"
+  # chmod +x dari setup-server.sh jangan dianggap "perubahan lokal" yang memblokir git pull
+  git config core.fileMode false
+  git pull --ff-only
+  # Jalankan ulang versi update.sh yang BARU saja ditarik, karena langkah update bisa berubah antar versi
+  SMC_UPDATE_PULLED=1 exec bash "$APP_DIR/deploy/update.sh"
+fi
 
 step "Backup database sebelum update"
 bash "$APP_DIR/deploy/backup-db.sh"

@@ -33,6 +33,8 @@ node -v
 step "3/9 User aplikasi '$APP_USER'"
 id -u "$APP_USER" >/dev/null 2>&1 || useradd --system --home-dir "$APP_DIR" --shell /usr/sbin/nologin "$APP_USER"
 git config --global --add safe.directory "$APP_DIR"
+# chmod +x pada skrip deploy jangan dianggap perubahan lokal (memblokir git pull di update.sh)
+git -C "$APP_DIR" config core.fileMode false
 
 step "4/9 MySQL"
 cat > /etc/mysql/mysql.conf.d/smc.cnf <<'EOF'
