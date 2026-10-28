@@ -117,14 +117,17 @@ export default function Absen() {
     }
   }
 
-  function submit() {
-    if (!pos) return;
-    const image = camera.current?.capture();
-    if (!image) {
-      setError('Kamera belum siap');
+  async function submit() {
+    if (!pos || !camera.current) return;
+    setSubmitting(true);
+    // Beberapa frame berturut-turut: tolak bila bergerak, kirim frame paling tajam
+    const shot = await camera.current.captureStable();
+    if (!shot.ok) {
+      setSubmitting(false);
+      setError(shot.reason);
       return;
     }
-    send(image, pos);
+    send(shot.image, pos);
   }
 
   const pressKey = (k: string) => {

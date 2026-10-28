@@ -26,9 +26,11 @@ export const env = {
   jwtSecret: required('JWT_SECRET'),
   jwtExpires: process.env.JWT_EXPIRES ?? '12h',
   faceServiceUrl: process.env.FACE_SERVICE_URL ?? 'http://127.0.0.1:8001',
-  faceTolerance: num('FACE_TOLERANCE', 0.45),
-  // Pendaftaran ditolak bila wajah baru sedekat ini dengan karyawan lain
-  faceDuplicateThreshold: num('FACE_DUPLICATE_THRESHOLD', 0.5),
+  // Jarak cosine maksimum agar wajah dianggap cocok saat absen (model SFace).
+  // Nama variabel baru: nilai FACE_TOLERANCE lama (model dlib) tidak berlaku lagi.
+  faceTolerance: num('FACE_MAX_DISTANCE', 0.55),
+  // Pendaftaran butuh persetujuan Super Admin bila wajah baru sedekat ini dengan karyawan lain
+  faceDuplicateThreshold: num('FACE_DUPLICATE_DISTANCE', 0.4),
   lateToleranceMin: num('LATE_TOLERANCE_MINUTES', 120),
   superAdmin: {
     username: process.env.SUPER_ADMIN_USERNAME ?? 'superadmin',

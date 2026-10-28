@@ -39,7 +39,7 @@ GitHub → Settings → Developer settings → Personal access tokens → Fine-g
 bash /var/www/smc/deploy/setup-server.sh
 ```
 
-Skrip ini memasang Nginx, MySQL 8, Node.js 22, Python venv + face_recognition, membuat database & user MySQL dengan password acak,
+Skrip ini memasang Nginx, MySQL 8, Node.js 22, Python venv + OpenCV (model wajah YuNet + SFace), membuat database & user MySQL dengan password acak,
 membuat `backend/.env`, build backend & frontend, menyalakan service systemd, Nginx, firewall, dan backup harian.
 
 Di tengah jalan skrip menanyakan data **Super Admin**. Isi dengan benar: akun ini permanen dan passwordnya tidak bisa diganti.

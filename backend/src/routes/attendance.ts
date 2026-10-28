@@ -8,6 +8,7 @@ import {
   GeofenceSetting,
   Holiday,
   LeaveRequest,
+  isFaceOutdated,
   parseEmbeddings,
   User,
 } from '../models';
@@ -86,7 +87,10 @@ router.post(
     const candidates = employees
       .map((u) => ({ id: u.id, embeddings: parseEmbeddings(u.faceEmbedding) }))
       .filter((c): c is { id: number; embeddings: number[][] } => c.embeddings !== null);
-    if (candidates.length === 0) throw new HttpError(503, 'Belum ada data wajah karyawan yang terdaftar');
+    // Karyawan dengan data wajah model lama (dlib) belum bisa dikenali sampai daftar ulang
+    const needReenroll = employees.some((u) => isFaceOutdated(u.faceEmbedding));
+    const reenrollHint = needReenroll ? ' Bila wajah Anda belum didaftarkan ulang setelah pembaruan sistem, hubungi Super Admin.' : '';
+    if (candidates.length === 0) throw new HttpError(503, `Belum ada data wajah karyawan yang terdaftar.${reenrollHint}`);
 
     const ranked = await rankFaces(body.image, candidates);
     const pinUserIds = new Set(employees.filter((u) => u.pinHash).map((u) => u.id));
@@ -104,7 +108,7 @@ router.post(
     } else if (decision.kind === 'ambiguous') {
       throw new HttpError(401, 'Wajah mirip dengan lebih dari satu karyawan. Hubungi Super Admin untuk mengatur PIN absen.');
     } else {
-      throw new HttpError(401, 'Wajah tidak dikenali. Pastikan wajah terlihat jelas dan coba lagi.');
+      throw new HttpError(401, `Wajah tidak dikenali. Pastikan wajah terlihat jelas dan coba lagi.${reenrollHint}`);
     }
     const user = employees.find((u) => u.id === match.id)!;
 

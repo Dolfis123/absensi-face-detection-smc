@@ -51,6 +51,13 @@ export const NAV_GROUPS: Record<Role, NavGroup[]> = {
         { to: '/app/review-kendala', label: 'Laporan Kendala', icon: 'alert' },
       ],
     },
+    {
+      title: 'Jadwal',
+      items: [
+        { to: '/app/roster', label: 'Roster Shift', icon: 'calendar' },
+        { to: '/app/pengaturan-shift', label: 'Pengaturan Shift', icon: 'clock' },
+      ],
+    },
     { title: 'Laporan', items: [{ to: '/app/laporan', label: 'Rekap & Unduh', icon: 'download' }] },
   ],
   SUPER_ADMIN: [

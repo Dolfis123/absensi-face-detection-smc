@@ -8,8 +8,8 @@ export interface Ranked {
   distance: number;
 }
 
-// Dua kandidat dengan selisih jarak di bawah ini dianggap tidak bisa dibedakan dari wajah saja
-export const AMBIGUITY_MARGIN = 0.05;
+// Dua kandidat dengan selisih jarak (cosine) di bawah ini dianggap tidak bisa dibedakan dari wajah saja
+export const AMBIGUITY_MARGIN = 0.08;
 // Karyawan ber-PIN tetap dianggap kandidat sedikit di atas toleransi, karena PIN yang memastikan
 export const PIN_POOL_MARGIN = 0.1;
 

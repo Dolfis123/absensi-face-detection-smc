@@ -3,11 +3,6 @@ uvicorn[standard]==0.34.0
 numpy==1.26.4
 Pillow==11.0.0
 pydantic==2.10.4
-# dlib siap pakai (tanpa perlu Visual Studio C++)
-dlib-bin==19.24.6
-face_recognition_models==0.3.0
-# face_recognition_models memakai pkg_resources; venv Python 3.12 (Ubuntu 24.04) tidak membawa setuptools
-setuptools<81
-# face_recognition SENGAJA tidak dicantumkan di sini: ia menarik paket `dlib` yang harus
-# dikompilasi. Pasang terpisah setelah file ini:
-#   .venv\Scripts\python -m pip install face_recognition==1.3.0 --no-deps
+# Deteksi (YuNet) & pengenalan wajah (SFace) — tanpa dlib, tanpa compiler C++
+opencv-python-headless==4.10.0.84
+# Setelah install, unduh model sekali: python download_models.py

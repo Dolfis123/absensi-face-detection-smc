@@ -42,13 +42,25 @@ const FACE_POSES = [
 function FaceCapture({ photos, onChange }: { photos: string[]; onChange: (v: string[]) => void }) {
   const cam = useRef<CameraHandle>(null);
   const done = photos.length >= FACE_POSES.length;
+  const [shooting, setShooting] = useState(false);
+  const [shotError, setShotError] = useState<string | null>(null);
+
+  async function shoot() {
+    if (!cam.current) return;
+    setShooting(true);
+    setShotError(null);
+    const shot = await cam.current.captureStable();
+    setShooting(false);
+    if (shot.ok) onChange([...photos, shot.image]);
+    else setShotError(shot.reason);
+  }
 
   return (
     <div className="space-y-3">
       <ul className="list-disc space-y-0.5 pl-5 text-xs text-slate-600">
         <li>Cahaya terang dari depan, jangan membelakangi jendela/lampu.</li>
-        <li>Tanpa masker, topi, atau kacamata hitam. Ekspresi biasa.</li>
-        <li>Tahan kamera stabil agar foto tidak buram. Tiap pose cukup menoleh sedikit.</li>
+        <li>Tanpa masker, topi, atau kacamata hitam. Kumis/jenggot tidak masalah. Ekspresi biasa.</li>
+        <li>Saat tombol ditekan, tahan HP dan kepala tetap diam ±1 detik. Tiap pose cukup menoleh sedikit.</li>
       </ul>
 
       {!done && (
@@ -57,16 +69,9 @@ function FaceCapture({ photos, onChange }: { photos: string[]; onChange: (v: str
           <div className="text-center text-sm font-semibold text-brand-700">
             Foto {photos.length + 1}: {FACE_POSES[photos.length]}
           </div>
-          <Button
-            type="button"
-            variant="secondary"
-            className="w-full"
-            onClick={() => {
-              const shot = cam.current?.capture();
-              if (shot) onChange([...photos, shot]);
-            }}
-          >
-            Ambil Foto {photos.length + 1}
+          {shotError && <Alert>{shotError}</Alert>}
+          <Button type="button" variant="secondary" className="w-full" loading={shooting} onClick={shoot}>
+            {shooting ? 'Tahan diam…' : `Ambil Foto ${photos.length + 1}`}
           </Button>
         </>
       )}
@@ -288,7 +293,7 @@ export default function Karyawan() {
     <>
       <PageHeader
         title="Data Pengguna"
-        subtitle={`${employees.length} karyawan parkir · ${employees.filter((e) => e.hasFace).length} wajah terdaftar`}
+        subtitle={`${employees.length} karyawan parkir · ${employees.filter((e) => e.hasFace).length} wajah terdaftar${employees.some((e) => e.faceOutdated) ? ` · ${employees.filter((e) => e.faceOutdated).length} perlu daftar ulang wajah` : ""}`}
         actions={
           <Button icon="plus" onClick={() => open({ type: 'create' })}>
             Tambah Pengguna
@@ -341,6 +346,10 @@ export default function Karyawan() {
                 <Td>
                   {u.role !== 'KARYAWAN' ? (
                     <span className="text-slate-300">—</span>
+                  ) : u.faceOutdated ? (
+                    <span title="Data wajah dari mesin pengenal lama. Daftarkan ulang lewat tombol Wajah agar bisa absen.">
+                      <Badge className="bg-rose-50 text-rose-700 ring-1 ring-rose-600/15">Daftar ulang</Badge>
+                    </span>
                   ) : !u.hasFace ? (
                     <Badge className="bg-rose-50 text-rose-700 ring-1 ring-rose-600/15">Belum ada</Badge>
                   ) : u.faceCount < MIN_FACE_PHOTOS ? (

@@ -29,6 +29,7 @@ export interface FaceQuality {
 }
 
 export interface EnrollResult {
+  model: string;
   embeddings: number[][];
   spread: number; // jarak terjauh antar-foto orang yang sama
   quality: FaceQuality[];

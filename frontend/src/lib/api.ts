@@ -14,6 +14,8 @@ export interface PublicUser {
   isActive: boolean;
   hasFace: boolean;
   faceCount: number;
+  /** Data wajah dari mesin lama — wajib daftar ulang agar bisa absen. */
+  faceOutdated: boolean;
   hasPin: boolean;
   immutable: boolean;
 }

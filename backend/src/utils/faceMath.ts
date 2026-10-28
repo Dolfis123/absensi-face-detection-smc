@@ -1,10 +1,19 @@
 export type Embedding = number[];
 
-/** Jarak Euclidean dua face embedding (sama dengan face_recognition.face_distance). */
+/**
+ * Jarak cosine (1 - cosine similarity) dua face embedding SFace, sama dengan face-service.
+ * 0 = identik; orang yang sama umumnya < 0.5; orang berbeda umumnya > 0.7.
+ */
 export function faceDistance(a: Embedding, b: Embedding): number {
-  let sum = 0;
-  for (let i = 0; i < a.length; i++) sum += (a[i] - b[i]) ** 2;
-  return Math.sqrt(sum);
+  let dot = 0;
+  let na = 0;
+  let nb = 0;
+  for (let i = 0; i < a.length; i++) {
+    dot += a[i] * b[i];
+    na += a[i] * a[i];
+    nb += b[i] * b[i];
+  }
+  return 1 - dot / (Math.sqrt(na * nb) || 1);
 }
 
 /** Jarak terdekat antara dua kumpulan foto (orang A vs orang B). */
@@ -21,6 +30,6 @@ export function spread(set: Embedding[]): number {
   return worst;
 }
 
-// Panduan membaca jarak antar dua orang BERBEDA (model dlib, toleransi absen 0.45)
-export const DISTANCE_DANGER = 0.5; // bisa tertukar → pendaftaran ditolak
-export const DISTANCE_WARN = 0.6; // cukup mirip → beri peringatan
+// Panduan membaca jarak antar dua orang BERBEDA (model SFace, jarak cosine)
+export const DISTANCE_DANGER = 0.4; // kemungkinan orang yang sama / sangat mirip → pendaftaran butuh persetujuan
+export const DISTANCE_WARN = 0.55; // cukup mirip → beri peringatan

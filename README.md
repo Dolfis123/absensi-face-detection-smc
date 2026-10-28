@@ -5,7 +5,7 @@ Sistem Absensi Wajah & Geofencing — Pos Parkir Mal SMC (Sorong Mega Mall), Kot
 ```
 smc-faceattend/
 ├── backend/        Node.js + Express + TypeScript + Sequelize (MySQL)  → port 4000
-├── face-service/   Python + FastAPI + face_recognition (dlib)         → port 8001 (internal)
+├── face-service/   Python + FastAPI + OpenCV (YuNet + SFace)          → port 8001 (internal)
 └── frontend/       React + Vite + TypeScript + Tailwind CSS           → port 5173 (HTTPS)
 ```
 
@@ -30,7 +30,7 @@ User MySQL yang dipakai butuh hak `TRIGGER` (untuk trigger anti-manipulasi).
 cd face-service
 python -m venv .venv
 .venv\Scripts\python -m pip install -r requirements.txt
-.venv\Scripts\python -m pip install face_recognition==1.3.0 --no-deps   # --no-deps: pakai dlib-bin, tidak kompilasi dlib
+.venv\Scripts\python download_models.py          # sekali: model YuNet & SFace (±38 MB) ke face-service/models
 .venv\Scripts\python -m uvicorn app:app --host 127.0.0.1 --port 8001
 ```
 
@@ -95,13 +95,19 @@ Kamera & GPS di browser HP **wajib HTTPS**.
 
 - Setiap Karyawan Parkir didaftarkan dengan **3–5 foto** (lurus, menoleh kiri, menoleh kanan, opsional mendongak/menunduk).
   Saat absen, wajah dibandingkan dengan semua foto itu dan diambil yang paling mirip.
-- Face-service menolak foto yang buram, terlalu gelap/terang, kontras rendah (membelakangi cahaya), terlalu menyamping,
-  tanpa satu pun foto lurus, atau tidak konsisten satu sama lain. Pesan error menyebut nomor fotonya.
-- Backend menolak pendaftaran bila wajah baru berjarak < `FACE_DUPLICATE_THRESHOLD` (0.5) dari karyawan lain, termasuk
-  akun nonaktif, dan memberi peringatan bila < 0.6.
-- Ambang kualitas di face-service bisa diatur lewat environment variable sebelum menjalankan uvicorn:
-  `FACE_MIN_SHARPNESS` (40), `FACE_MIN_BRIGHTNESS` (60), `FACE_MAX_BRIGHTNESS` (210), `FACE_MIN_CONTRAST` (25),
-  `FACE_MAX_YAW` (0.45), `FACE_FRONTAL_YAW` (0.15), `FACE_ENROLL_MAX_SPREAD` (0.55), `FACE_ENROLL_JITTERS` (10).
+- Mesin wajah: **YuNet** (deteksi + 5 titik wajah, tahan kumis/jenggot & pose) dan **SFace** (embedding 128 dimensi)
+  dari OpenCV Zoo, lisensi MIT/Apache-2.0. Wajah diluruskan (alignment) sebelum dikenali; jarak = jarak cosine
+  (orang yang sama umumnya < 0.5, orang berbeda umumnya > 0.7).
+- Kamera mengambil 6 frame berturut-turut, menolak bila kamera/wajah bergerak, lalu mengirim frame paling tajam.
+- Face-service menolak foto pendaftaran yang buram, area mata terlalu gelap/silau, terlalu menyamping/mendongak/miring,
+  wajah tertutup, tanpa satu pun foto lurus, atau tidak konsisten. Kecerahan diukur di area mata & dahi (bukan seluruh
+  wajah) agar kumis/jenggot dan kulit gelap tidak membuat foto ditolak.
+- Pendaftaran butuh persetujuan Super Admin + PIN bila wajah baru berjarak < `FACE_DUPLICATE_DISTANCE` (0.4) dari
+  karyawan lain; absen cocok bila jarak ≤ `FACE_MAX_DISTANCE` (0.55).
+- Data wajah dari mesin lama (dlib) ditandai **Daftar ulang** di Data Pengguna dan tidak dipakai untuk absen.
+- Ambang kualitas face-service (environment variable): `FACE_MIN_SHARPNESS` (25), `FACE_MIN_BRIGHTNESS` (40),
+  `FACE_MAX_BRIGHTNESS` (230), `FACE_MAX_GLARE` (0.2), `FACE_MAX_YAW` (0.5), `FACE_MAX_ROLL` (25),
+  `FACE_MIN_DET_SCORE` (0.88), `FACE_MIN_PX` (90), `FACE_ENROLL_MAX_SPREAD` (0.55).
 - Diagnosis data wajah yang sudah terdaftar (hanya membaca database):
   ```bash
   cd backend
@@ -115,7 +121,7 @@ Kamera & GPS di browser HP **wajib HTTPS**.
 - **Fake GPS tidak bisa dideteksi 100% dari browser.** Server menolak koordinat di luar radius & akurasi buruk, tetapi aplikasi
   pemalsu lokasi yang memberi koordinat "tepat di pos" tidak bisa dibedakan dari web. Mitigasi kuat: pakai satu
   **perangkat kiosk milik perusahaan** di pos (HP/tablet terkunci) — wajah tetap mencegah titip absen.
-- **Belum ada liveness detection.** `face_recognition` mencocokkan wajah tetapi tidak bisa membedakan wajah asli dari foto
+- **Belum ada liveness detection.** Mesin wajah mencocokkan wajah tetapi tidak bisa membedakan wajah asli dari foto
   di layar HP lain. Untuk mencegahnya, tambahkan cek liveness (kedip/gerak kepala, atau model anti-spoofing) di face-service.
 - `sequelize.sync()` dipakai untuk kemudahan; untuk produksi gunakan migrasi (`sequelize-cli`).
 - Face-service jangan dibuka ke internet; hanya backend yang memanggilnya.

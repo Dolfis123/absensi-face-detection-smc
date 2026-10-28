@@ -16,7 +16,9 @@ bash "$APP_DIR/deploy/backup-db.sh"
 step "Face-service"
 cd "$APP_DIR/face-service"
 .venv/bin/pip install -r requirements.txt
-.venv/bin/pip install face_recognition==1.3.0 --no-deps
+# Paket mesin lama (dlib) tidak dipakai lagi sejak pindah ke OpenCV YuNet + SFace
+.venv/bin/pip uninstall -y face_recognition face_recognition_models dlib-bin dlib 2>/dev/null || true
+.venv/bin/python download_models.py
 
 step "Backend"
 cd "$APP_DIR/backend" && npm ci && npm run build

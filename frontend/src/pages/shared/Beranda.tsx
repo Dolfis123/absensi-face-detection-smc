@@ -72,7 +72,7 @@ export default function BerandaPengawas() {
   const cuti = count('IZIN', 'SAKIT', 'CUTI');
   const onBreak = rows.filter((r) => r.break?.onBreak).length;
   const openIssues = data.issues.filter((i) => i.status === 'OPEN' || (isAdmin && i.status === 'ESCALATED'));
-  const needFace = data.users.filter((u) => u.role === 'KARYAWAN' && u.isActive && u.faceCount < 3);
+  const needFace = data.users.filter((u) => u.role === 'KARYAWAN' && u.isActive && (u.faceOutdated || u.faceCount < 3));
 
   const trend: TrendPoint[] = Array.from({ length: 7 }, (_, i) => addDays(data.today.serverTime.date, i - 6)).map((date) => {
     const p: TrendPoint = { date, tepat: 0, terlambat: 0, izin: 0, alfa: 0 };

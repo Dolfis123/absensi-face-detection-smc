@@ -101,8 +101,8 @@ export class User extends Model<InferAttributes<User>, InferCreationAttributes<U
   declare role: Role;
   declare phone: string;
   declare defaultShiftId: ForeignKey<number> | null;
-  // Versi baru: number[][] (3–5 foto). Data lama berupa number[] tunggal tetap terbaca.
-  declare faceEmbedding: CreationOptional<number[][] | number[] | null>;
+  // { model, vectors } — lihat StoredFace. Data dlib lama (array polos) perlu daftar ulang.
+  declare faceEmbedding: CreationOptional<StoredFace | number[][] | number[] | null>;
   // PIN absen (bcrypt) — wajib untuk karyawan yang wajahnya mirip karyawan lain (mis. saudara)
   declare pinHash: CreationOptional<string | null>;
   declare isActive: CreationOptional<boolean>;
@@ -122,6 +122,7 @@ export class User extends Model<InferAttributes<User>, InferCreationAttributes<U
       isActive: this.isActive,
       hasFace: parseEmbeddings(this.faceEmbedding) !== null,
       faceCount: parseEmbeddings(this.faceEmbedding)?.length ?? 0,
+      faceOutdated: isFaceOutdated(this.faceEmbedding),
       hasPin: !!this.pinHash,
       immutable: this.role === 'SUPER_ADMIN',
     };
@@ -174,12 +175,30 @@ User.init(
   },
 );
 
-/** Semua embedding wajah milik pengguna. Format lama (satu foto) dibungkus jadi array. */
+/** Model pengenal wajah yang dipakai face-service sekarang (lihat face-service/app.py). */
+export const FACE_MODEL = 'sface-2021dec';
+
+/** Format simpanan data wajah: { model, vectors }. Data dlib lama berupa array polos. */
+export interface StoredFace {
+  model: string;
+  vectors: number[][];
+}
+
+const readFace = (raw: unknown): unknown => (typeof raw === 'string' ? JSON.parse(raw) : raw);
+
+/**
+ * Embedding wajah yang COCOK dengan model sekarang, atau null.
+ * Data dari model lama (dlib) tidak bisa dibandingkan dengan model baru → dianggap belum terdaftar.
+ */
 export function parseEmbeddings(raw: unknown): number[][] | null {
-  if (raw == null) return null;
-  const value = typeof raw === 'string' ? JSON.parse(raw) : raw;
-  if (!Array.isArray(value) || value.length === 0) return null;
-  return typeof value[0] === 'number' ? [value as number[]] : (value as number[][]);
+  const value = readFace(raw) as Partial<StoredFace> | null;
+  if (!value || Array.isArray(value) || value.model !== FACE_MODEL || !value.vectors?.length) return null;
+  return value.vectors;
+}
+
+/** Ada data wajah, tapi dari model lama → karyawan perlu daftar ulang wajah. */
+export function isFaceOutdated(raw: unknown): boolean {
+  return readFace(raw) != null && parseEmbeddings(raw) === null;
 }
 
 // ───────────────────────────── Roster harian (shift dinamis) ─────────────────────────────

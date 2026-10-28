@@ -5,3 +5,6 @@ uploads/
 __pycache__/
 .venv/
 *.log
+
+# Model wajah (diunduh lewat face-service/download_models.py)
+face-service/models/

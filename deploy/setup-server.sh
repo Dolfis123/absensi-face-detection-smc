@@ -88,8 +88,8 @@ JWT_SECRET=$(openssl rand -hex 48)
 JWT_EXPIRES=12h
 
 FACE_SERVICE_URL=http://127.0.0.1:8001
-FACE_TOLERANCE=0.45
-FACE_DUPLICATE_THRESHOLD=0.5
+FACE_MAX_DISTANCE=0.55
+FACE_DUPLICATE_DISTANCE=0.4
 LATE_TOLERANCE_MINUTES=120
 
 SUPER_ADMIN_USERNAME=$SA_USER
@@ -118,8 +118,8 @@ cd "$APP_DIR/face-service"
 [[ -d .venv ]] || python3 -m venv .venv
 .venv/bin/pip install --upgrade pip
 .venv/bin/pip install -r requirements.txt
-.venv/bin/pip install face_recognition==1.3.0 --no-deps
-.venv/bin/python -c "import face_recognition, dlib; print('face_recognition OK, dlib', dlib.__version__)"
+.venv/bin/python download_models.py
+.venv/bin/python -c "import cv2; print('OpenCV OK', cv2.__version__)"
 
 step "6/9 Build backend & frontend"
 cd "$APP_DIR/backend" && npm ci && npm run build

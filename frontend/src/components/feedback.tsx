@@ -71,8 +71,8 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
       </div>
 
       {dialog && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-[2px]" onClick={() => close(false)}>
-          <div className="w-full max-w-sm animate-slide-in rounded-2xl bg-white p-6 shadow-pop" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-[2px]">
+          <div className="w-full max-w-sm animate-slide-in rounded-2xl bg-white p-6 shadow-pop">
             <div
               className={`mb-4 flex h-11 w-11 items-center justify-center rounded-full ${
                 dialog.danger ? 'bg-rose-100 text-rose-600' : 'bg-brand-100 text-brand-600'

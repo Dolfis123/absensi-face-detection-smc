@@ -6,7 +6,7 @@
  * Hanya membaca database, tidak mengubah apa pun.
  */
 import { env } from '../config/env';
-import { parseEmbeddings, sequelize, User } from '../models';
+import { isFaceOutdated, parseEmbeddings, sequelize, User } from '../models';
 import { DISTANCE_DANGER, DISTANCE_WARN, minDistance, spread } from '../utils/faceMath';
 
 const SPREAD_WARN = 0.5;
@@ -17,7 +17,8 @@ async function main() {
   const people = users
     .map((u) => ({ user: u, embeddings: parseEmbeddings(u.faceEmbedding) }))
     .filter((p): p is { user: User; embeddings: number[][] } => p.embeddings !== null);
-  const missing = users.filter((u) => !parseEmbeddings(u.faceEmbedding));
+  const missing = users.filter((u) => !parseEmbeddings(u.faceEmbedding) && !isFaceOutdated(u.faceEmbedding));
+  const outdated = users.filter((u) => isFaceOutdated(u.faceEmbedding));
 
   console.log(`\n=== Cek Data Wajah SMC-FaceAttend ===`);
   console.log(`Toleransi absen: ${env.faceTolerance} · ambang wajah ganda: ${env.faceDuplicateThreshold}\n`);
@@ -34,7 +35,7 @@ async function main() {
     const s = spread(embeddings);
     const notes: string[] = [];
     if (!user.isActive) notes.push('nonaktif');
-    if (embeddings.length < 3) notes.push('DAFTAR ULANG: baru 1 foto (format lama)');
+    if (embeddings.length < 3) notes.push('DAFTAR ULANG: foto kurang dari 3');
     else if (s > SPREAD_WARN) notes.push('DAFTAR ULANG: foto tidak konsisten');
     if (nearest.distance < DISTANCE_DANGER) notes.push(`BAHAYA: mirip ${nearest.name}`);
     else if (nearest.distance < DISTANCE_WARN) notes.push(`perhatian: mirip ${nearest.name}`);
@@ -50,6 +51,7 @@ async function main() {
   });
   console.table(perPerson);
   if (missing.length) console.log(`Belum punya data wajah: ${missing.map((u) => u.fullName).join(', ')}`);
+  if (outdated.length) console.log(`DAFTAR ULANG (data wajah model lama): ${outdated.map((u) => u.fullName).join(', ')}`);
 
   // ── 2. Pasangan paling mirip ──
   const pairs: { a: string; b: string; distance: number }[] = [];
@@ -78,7 +80,7 @@ async function main() {
   console.log('\nRingkasan:');
   console.log(`- ${people.length} karyawan berwajah terdaftar, ${missing.length} belum`);
   console.log(`- ${redo} perlu daftar ulang wajah, ${danger} pasangan berbahaya (jarak < ${DISTANCE_DANGER})`);
-  console.log('Cara baca jarak: < 0.50 bahaya · 0.50–0.60 perhatian · > 0.60 aman (dua orang berbeda).');
+  console.log(`Cara baca jarak (cosine): < ${DISTANCE_DANGER} sangat mirip · ${DISTANCE_DANGER}–${DISTANCE_WARN} perhatian · > ${DISTANCE_WARN} aman.`);
   console.log('Sebaran foto satu orang idealnya < 0.40; > 0.50 berarti fotonya kurang konsisten.\n');
 }
 

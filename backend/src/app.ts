@@ -9,6 +9,7 @@ import attendanceRoutes from './routes/attendance';
 import authRoutes from './routes/auth';
 import meRoutes from './routes/me';
 import monitorRoutes from './routes/monitor';
+import planningRoutes from './routes/planning';
 
 export const app = express();
 
@@ -22,7 +23,8 @@ app.get('/api/health', (_req, res) => res.json({ ok: true }));
 app.use('/api/auth', authRoutes);
 app.use('/api/attendance', attendanceRoutes); // publik: tombol "Absen Sekarang"
 app.use('/api/me', requireAuth, meRoutes);
-app.use('/api/admin', requireAuth, adminRoutes);
+// planningRoutes (roster & pengaturan shift) juga untuk Koordinator; sisanya khusus Super Admin
+app.use('/api/admin', requireAuth, planningRoutes, adminRoutes);
 app.use('/api', requireAuth, monitorRoutes);
 
 app.use('/api', (_req, res) => res.status(404).json({ message: 'Endpoint tidak ditemukan' }));
