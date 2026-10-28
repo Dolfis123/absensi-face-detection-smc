@@ -102,6 +102,7 @@ export default function Monitoring() {
                   <Td className="text-slate-600">{r.shiftName ?? '—'}</Td>
                   <Td>
                     <StatusBadge status={r.status} />
+                    {r.status === 'ABSEN_SEKALI' && r.note && <div className="mt-1 text-xs text-violet-700">{r.note}</div>}
                   </Td>
                   <Td>
                     <SlotTime d={r} slot="MASUK" />
