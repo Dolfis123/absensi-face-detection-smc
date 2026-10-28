@@ -48,6 +48,8 @@ router.put(
               userId: z.number().int().positive(),
               date: z.string().regex(DATE_RE),
               shiftId: z.number().int().positive().nullable(),
+              // true = hari Off (libur pribadi). shiftId null tanpa off = kosongkan jadwal.
+              off: z.boolean().default(false),
             }),
           )
           .max(2000),
@@ -59,7 +61,9 @@ router.put(
     }
     await sequelize.transaction(async (transaction) => {
       for (const e of entries) {
-        if (e.shiftId === null) {
+        if (e.off) {
+          await EmployeeSchedule.upsert({ userId: e.userId, date: e.date, shiftId: null }, { transaction });
+        } else if (e.shiftId === null) {
           await EmployeeSchedule.destroy({ where: { userId: e.userId, date: e.date }, transaction });
         } else {
           await EmployeeSchedule.upsert({ userId: e.userId, date: e.date, shiftId: e.shiftId }, { transaction });

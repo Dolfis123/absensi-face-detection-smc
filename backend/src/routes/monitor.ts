@@ -104,6 +104,7 @@ const STATUS_LABEL: Record<string, string> = {
   CUTI: 'Cuti',
   LIBUR: 'Libur',
   OFF: 'Tidak Dijadwalkan',
+  DAY_OFF: 'Off',
   BELUM: 'Belum Absen',
   ABSEN_SEKALI: 'Absen Sekali',
 };
@@ -151,7 +152,7 @@ router.get(
     sendCsv(
       res,
       `rekap-bulanan-SMC_${month}.csv`,
-      ['NIK', 'Nama', 'Hari Kerja', 'Hadir', 'Tepat Waktu', 'Terlambat', 'Absen Sekali', 'Izin', 'Sakit', 'Cuti', 'Alfa', 'Libur', 'Istirahat Lebih', 'Lupa Absen Kembali', 'Kehadiran (%)'],
+      ['NIK', 'Nama', 'Hari Kerja', 'Hadir', 'Tepat Waktu', 'Terlambat', 'Absen Sekali', 'Izin', 'Sakit', 'Cuti', 'Alfa', 'Libur', 'Hari Off', 'Istirahat Lebih', 'Lupa Absen Kembali', 'Kehadiran (%)'],
       recap.map(({ user, summary: s }) => [
         user.nik,
         user.fullName,
@@ -165,6 +166,7 @@ router.get(
         s.cuti,
         s.alfa,
         s.libur,
+        s.hariOff,
         s.istirahatLebih,
         s.lupaKembali,
         s.hariKerja ? Math.round((s.hadir / s.hariKerja) * 100) : '',

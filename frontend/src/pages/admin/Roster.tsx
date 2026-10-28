@@ -6,11 +6,17 @@ import { addDays, mondayOf, shortDay, todayWIT } from '../../lib/format';
 
 interface RosterResponse {
   employees: { id: number; fullName: string; nik: string; role: Role; defaultShiftId: number | null }[];
-  schedules: { userId: number; date: string; shiftId: number }[];
+  // shiftId null = hari Off yang sengaja ditetapkan
+  schedules: { userId: number; date: string; shiftId: number | null }[];
 }
 
+/** Isi satu sel roster: id shift, 'OFF' (libur pribadi), atau null (belum dijadwalkan). */
+type Cell = number | 'OFF' | null;
+
 const key = (u: number, d: string) => `${u}|${d}`;
-const CELL_CLS = ['bg-white text-slate-400', 'bg-sky-100 text-sky-800', 'bg-violet-100 text-violet-800', 'bg-teal-100 text-teal-800'];
+const SHIFT_CLS = ['bg-sky-100 text-sky-800', 'bg-violet-100 text-violet-800', 'bg-teal-100 text-teal-800', 'bg-amber-100 text-amber-800'];
+const OFF_CLS = 'bg-slate-600 text-white';
+const EMPTY_CLS = 'bg-white text-slate-400';
 
 export default function Roster() {
   const today = todayWIT();
@@ -27,26 +33,28 @@ export default function Roster() {
       ]),
     [weekStart],
   );
-  const [draft, setDraft] = useState<Map<string, number | null>>(new Map());
+  const [draft, setDraft] = useState<Map<string, Cell>>(new Map());
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<{ kind: 'error' | 'success'; text: string } | null>(null);
 
+  const toCell = (shiftId: number | null): Cell => (shiftId === null ? 'OFF' : shiftId);
+
   useEffect(() => {
-    if (data) setDraft(new Map(data[0].schedules.map((s) => [key(s.userId, s.date), s.shiftId])));
+    if (data) setDraft(new Map(data[0].schedules.map((s) => [key(s.userId, s.date), toCell(s.shiftId)])));
   }, [data]);
 
   if (loading && !data) return <Loading />;
   if (!data) return <Alert>{error}</Alert>;
   const [roster, shifts, holidays] = data;
-  const original = new Map(roster.schedules.map((s) => [key(s.userId, s.date), s.shiftId]));
+  const original = new Map<string, Cell>(roster.schedules.map((s) => [key(s.userId, s.date), toCell(s.shiftId)]));
   const holidaySet = new Map(holidays.map((h) => [h.date, h.name]));
   const changes = [...draft.entries()].filter(([k, v]) => (original.get(k) ?? null) !== v);
   for (const k of original.keys()) if (!draft.has(k)) changes.push([k, null]);
 
-  // Klik sel: kosong → Shift 1 → Shift 2 → … → kosong
+  // Klik sel: kosong → Shift 1 → Shift 2 → Shift Penuh → Off → kosong
   const cycle = (userId: number, date: string) => {
     if (date < today) return;
-    const order: (number | null)[] = [null, ...shifts.map((s) => s.id)];
+    const order: Cell[] = [null, ...shifts.map((s) => s.id), 'OFF'];
     const cur = draft.get(key(userId, date)) ?? null;
     const next = order[(order.indexOf(cur) + 1) % order.length];
     setDraft((d) => new Map(d).set(key(userId, date), next));
@@ -56,9 +64,9 @@ export default function Roster() {
     setSaving(true);
     setMsg(null);
     try {
-      const entries = changes.map(([k, shiftId]) => {
+      const entries = changes.map(([k, v]) => {
         const [userId, date] = k.split('|');
-        return { userId: Number(userId), date, shiftId };
+        return { userId: Number(userId), date, shiftId: typeof v === 'number' ? v : null, off: v === 'OFF' };
       });
       await api.put('/admin/schedules', { entries });
       setMsg({ kind: 'success', text: `${entries.length} perubahan roster disimpan` });
@@ -81,13 +89,15 @@ export default function Roster() {
     }
   }
 
-  const shiftIdx = (id: number | null | undefined) => (id ? shifts.findIndex((s) => s.id === id) + 1 : 0);
+  const cellCls = (v: Cell) =>
+    v === 'OFF' ? OFF_CLS : v === null ? EMPTY_CLS : SHIFT_CLS[Math.max(0, shifts.findIndex((s) => s.id === v)) % SHIFT_CLS.length];
+  const cellText = (v: Cell) => (v === 'OFF' ? 'Off' : v === null ? '—' : (shifts.find((s) => s.id === v)?.name ?? '?'));
 
   return (
     <>
       <PageHeader
         title="Roster Shift Dinamis"
-        subtitle="Klik sel untuk mengganti: kosong → Shift 1 → Shift 2. Tanggal yang sudah lewat terkunci."
+        subtitle={`Klik sel untuk mengganti: kosong → ${shifts.map((s) => s.name).join(' → ')} → Off. Tanggal yang sudah lewat terkunci.`}
         actions={
           <>
             <Button variant="secondary" onClick={() => setWeekStart(addDays(weekStart, -7))}>
@@ -141,11 +151,11 @@ export default function Roster() {
                         <button
                           onClick={() => cycle(e.id, d)}
                           disabled={past}
-                          className={`h-10 w-full min-w-[4.5rem] rounded-lg text-xs font-semibold ring-1 ring-slate-200 ${CELL_CLS[shiftIdx(v)]} ${
+                          className={`h-10 w-full min-w-[5rem] rounded-lg px-1 text-xs font-semibold ring-1 ring-slate-200 ${cellCls(v)} ${
                             changed ? 'ring-2 ring-amber-400' : ''
                           } ${past ? 'cursor-not-allowed opacity-60' : 'hover:ring-brand-500'}`}
                         >
-                          {v ? shifts.find((s) => s.id === v)?.name : '—'}
+                          {cellText(v)}
                         </button>
                       </td>
                     );
@@ -155,8 +165,23 @@ export default function Roster() {
             </tbody>
           </table>
         </div>
+        <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-slate-600">
+          {shifts.map((s) => (
+            <span key={s.id} className="flex items-center gap-1.5">
+              <span className={`h-3 w-5 rounded ${cellCls(s.id)}`} />
+              {s.name} ({s.startTime}–{s.endTime})
+            </span>
+          ))}
+          <span className="flex items-center gap-1.5">
+            <span className={`h-3 w-5 rounded ${OFF_CLS}`} />
+            Off (libur pribadi, tidak dihitung Alfa)
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span className="h-3 w-5 rounded bg-white ring-1 ring-slate-300" />— belum dijadwalkan
+          </span>
+        </div>
         <div className="mt-4 flex flex-wrap justify-end gap-2">
-          <Button variant="secondary" onClick={fillDefault}>
+          <Button variant="secondary" onClick={fillDefault} title="Hari yang sudah ditandai Off atau sudah berisi shift tidak diubah">
             Isi yang kosong dari shift default
           </Button>
           <Button onClick={save} loading={saving} disabled={changes.length === 0}>

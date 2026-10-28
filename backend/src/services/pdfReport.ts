@@ -25,6 +25,7 @@ const STATUS: Record<DayStatus, { label: string; color: string }> = {
   CUTI: { label: 'Cuti', color: '#4338ca' },
   LIBUR: { label: 'Libur', color: '#475569' },
   OFF: { label: 'Tidak dijadwalkan', color: '#94a3b8' },
+  DAY_OFF: { label: 'Off', color: '#64748b' },
   BELUM: { label: 'Belum absen', color: '#475569' },
   ABSEN_SEKALI: { label: 'Absen sekali', color: '#c2410c' },
 };
@@ -167,7 +168,7 @@ export function sendAttendancePdf(res: Response, recap: EmployeeRecap[], meta: P
       for (const k of Object.keys(acc) as (keyof Summary)[]) acc[k] += r.summary[k];
       return acc;
     },
-    { hadir: 0, tepatWaktu: 0, terlambat: 0, absenSekali: 0, izin: 0, sakit: 0, cuti: 0, alfa: 0, libur: 0, hariKerja: 0, istirahatLebih: 0, lupaKembali: 0 } as Summary,
+    { hadir: 0, tepatWaktu: 0, terlambat: 0, absenSekali: 0, izin: 0, sakit: 0, cuti: 0, alfa: 0, libur: 0, hariOff: 0, hariKerja: 0, istirahatLebih: 0, lupaKembali: 0 } as Summary,
   );
   const overall = pct(total);
   kpiRow(doc, [

@@ -43,6 +43,7 @@ router.get(
       to,
       schedules: schedules.map((s) => ({
         date: s.date,
+        off: s.shiftId === null,
         shift: s.shift && { id: s.shift.id, name: s.shift.name, startTime: s.shift.startTime, endTime: s.shift.endTime },
       })),
       holidays,

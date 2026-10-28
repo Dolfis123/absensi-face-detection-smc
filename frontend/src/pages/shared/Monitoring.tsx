@@ -10,7 +10,7 @@ interface TodayResponse {
   rows: (DayRecord & { user: { id: number; fullName: string; nik: string; phone: string; role: Role } })[];
 }
 
-const ORDER: DayStatus[] = ['TEPAT_WAKTU', 'TERLAMBAT', 'ABSEN_SEKALI', 'BELUM', 'ALFA', 'IZIN', 'SAKIT', 'CUTI', 'LIBUR', 'OFF'];
+const ORDER: DayStatus[] = ['TEPAT_WAKTU', 'TERLAMBAT', 'ABSEN_SEKALI', 'BELUM', 'ALFA', 'IZIN', 'SAKIT', 'CUTI', 'LIBUR', 'DAY_OFF', 'OFF'];
 
 export default function Monitoring() {
   const { data, error, loading, reload } = useLoad(() => api.get<TodayResponse>('/monitor/today'));
@@ -95,7 +95,7 @@ export default function Monitoring() {
             </thead>
             <tbody className="divide-y divide-slate-100 bg-white">
               {visible.map((r) => (
-                <tr key={r.user.id} className={r.status === 'OFF' ? 'opacity-60' : ''}>
+                <tr key={r.user.id} className={r.status === 'OFF' || r.status === 'DAY_OFF' ? 'opacity-60' : ''}>
                   <Td>
                     <PersonCell name={r.user.fullName} sub={r.user.role === 'KOORDINATOR' ? `${r.user.nik} · Koordinator` : r.user.nik} />
                   </Td>

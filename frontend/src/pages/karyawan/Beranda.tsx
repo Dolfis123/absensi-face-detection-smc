@@ -8,7 +8,7 @@ import { useServerClock } from '../../lib/clock';
 import { addDays, fmtDate, greeting, shortDay, SLOT_LABEL } from '../../lib/format';
 
 interface ScheduleResponse {
-  schedules: { date: string; shift: { id: number; name: string; startTime: string; endTime: string } | null }[];
+  schedules: { date: string; off: boolean; shift: { id: number; name: string; startTime: string; endTime: string } | null }[];
   holidays: Holiday[];
 }
 
@@ -56,7 +56,8 @@ export default function BerandaKaryawan() {
   const todayShiftRef = sched.schedules.find((s) => s.date === today)?.shift ?? null;
   const shift = todayShiftRef ? shifts.find((s) => s.id === todayShiftRef.id) : undefined;
   const holiday = sched.holidays.find((h) => h.date === today);
-  const blocked = todayRecord && ['IZIN', 'SAKIT', 'CUTI', 'LIBUR'].includes(todayRecord.status);
+  const offToday = !!sched.schedules.find((s) => s.date === today)?.off;
+  const blocked = todayRecord && ['IZIN', 'SAKIT', 'CUTI', 'LIBUR', 'DAY_OFF'].includes(todayRecord.status);
 
   type TileState = 'done' | 'open' | 'upcoming' | 'missed';
   interface Tile {
@@ -109,6 +110,9 @@ export default function BerandaKaryawan() {
   if (holiday) {
     headline = 'Hari ini libur';
     detail = holiday.name;
+  } else if (offToday) {
+    headline = 'Hari ini jadwal Anda Off';
+    detail = 'Selamat beristirahat. Tidak perlu absen hari ini.';
   } else if (blocked && todayRecord) {
     headline = `Hari ini Anda tercatat ${todayRecord.status.charAt(0) + todayRecord.status.slice(1).toLowerCase()}`;
     detail = 'Tidak perlu absen hari ini.';
@@ -146,7 +150,9 @@ export default function BerandaKaryawan() {
                 {shift.name} · {shift.startTime}–{shift.endTime} WIT
               </span>
             ) : (
-              <span className="rounded-full bg-white/10 px-3 py-1 text-xs font-semibold text-brand-100">Tidak dijadwalkan</span>
+              <span className="rounded-full bg-white/10 px-3 py-1 text-xs font-semibold text-brand-100">
+                {offToday ? 'Off (libur)' : 'Belum dijadwalkan'}
+              </span>
             )}
             {todayRecord && todayRecord.status !== 'OFF' && todayRecord.status !== 'BELUM' && (
               <span className="rounded-full bg-white px-0.5 py-0.5">
@@ -230,8 +236,11 @@ export default function BerandaKaryawan() {
           <div className="grid grid-cols-4 gap-2 sm:grid-cols-7">
             {week.map((d) => {
               const sd = shortDay(d);
-              const sh = sched.schedules.find((s) => s.date === d)?.shift;
+              const row = sched.schedules.find((s) => s.date === d);
+              const sh = row?.shift;
+              const isOff = !!row?.off;
               const isHoliday = sched.holidays.some((h) => h.date === d);
+              const shiftIdx = sh ? Math.max(0, shifts.findIndex((s) => s.id === sh.id)) : 0;
               return (
                 <div
                   key={d}
@@ -245,10 +254,16 @@ export default function BerandaKaryawan() {
                   <div
                     className={cx(
                       'mt-1 truncate rounded-md px-1 py-0.5 text-[10px] font-semibold',
-                      isHoliday ? 'bg-slate-200 text-slate-600' : sh ? (sh.id === shifts[0]?.id ? 'bg-sky-100 text-sky-700' : 'bg-violet-100 text-violet-700') : 'text-slate-400',
+                      isHoliday
+                        ? 'bg-slate-200 text-slate-600'
+                        : isOff
+                          ? 'bg-slate-600 text-white'
+                          : sh
+                            ? ['bg-sky-100 text-sky-700', 'bg-violet-100 text-violet-700', 'bg-teal-100 text-teal-700'][shiftIdx % 3]
+                            : 'text-slate-400',
                     )}
                   >
-                    {isHoliday ? 'Libur' : sh ? sh.name : 'Off'}
+                    {isHoliday ? 'Libur' : isOff ? 'Off' : sh ? sh.name : '—'}
                   </div>
                 </div>
               );

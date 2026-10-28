@@ -213,7 +213,8 @@ export class EmployeeSchedule extends Model<
 > {
   declare id: CreationOptional<number>;
   declare userId: ForeignKey<number>;
-  declare shiftId: ForeignKey<number>;
+  // null = hari Off (libur pribadi) yang ditetapkan di roster; berbeda dengan tanggal tanpa baris (belum dijadwalkan)
+  declare shiftId: ForeignKey<number | null>;
   declare date: string;
   declare shift?: NonAttribute<Shift>;
 }

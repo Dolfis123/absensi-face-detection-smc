@@ -23,7 +23,8 @@ export type DayStatus =
   | 'SAKIT'
   | 'CUTI'
   | 'LIBUR'
-  | 'OFF' // tidak dijadwalkan
+  | 'OFF' // tidak ada jadwal di roster (belum dijadwalkan)
+  | 'DAY_OFF' // hari Off yang ditetapkan di roster (libur pribadi)
   | 'BELUM' // jendela masuk belum lewat
   // Hadir tapi absennya tidak lengkap: hanya Masuk (tidak absen Pulang) atau tanpa absen Masuk
   | 'ABSEN_SEKALI';
@@ -59,6 +60,8 @@ export interface Summary {
   cuti: number;
   alfa: number;
   libur: number;
+  /** Hari Off (libur pribadi) yang ditetapkan di roster */
+  hariOff: number;
   hariKerja: number;
   istirahatLebih: number;
   lupaKembali: number;
@@ -80,6 +83,7 @@ const emptySummary = (): Summary => ({
   cuti: 0,
   alfa: 0,
   libur: 0,
+  hariOff: 0,
   hariKerja: 0,
   istirahatLebih: 0,
   lupaKembali: 0,
@@ -173,6 +177,11 @@ export async function buildRecap(from: string, to: string, userIds?: number[]): 
         const key = leave.type.toLowerCase() as Lowercase<LeaveType>;
         summary[key]++;
         return { ...base, status: leave.type, note: leave.reason };
+      }
+      // Baris roster dengan shift kosong = hari Off yang sengaja ditetapkan (bukan Alfa)
+      if (scheduleMap.has(scheduleKey(user.id, date)) && shiftId === null) {
+        summary.hariOff++;
+        return { ...base, status: 'DAY_OFF', note: 'Off (libur)' };
       }
       if (!shift) return { ...base, status: 'OFF', note: null };
 

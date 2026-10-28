@@ -29,6 +29,19 @@ const SHIFTS = [
     // Nonaktif secara bawaan (rancangan awal Shift 2 hanya absen Masuk & Pulang)
     break: { enabled: false, windowStart: '18:00', windowEnd: '20:00', maxMinutes: 30, toleranceMinutes: 15 },
   },
+  {
+    // Masuk pagi, pulang malam (mis. Koordinator Lapangan atau karyawan dobel shift).
+    // Dibuat otomatis juga di database yang sudah berjalan (findOrCreate); jamnya bisa diubah di Pengaturan Shift.
+    code: 'SHIFT_PENUH',
+    name: 'Shift Penuh',
+    startTime: '08:00',
+    endTime: '23:00',
+    slots: [
+      { type: 'MASUK', windowStart: '07:30', windowEnd: '08:00', sortOrder: 1 },
+      { type: 'PULANG', windowStart: '23:00', windowEnd: '23:30', sortOrder: 2 },
+    ],
+    break: { enabled: true, windowStart: '12:00', windowEnd: '14:00', maxMinutes: 60, toleranceMinutes: 15 },
+  },
 ] as const;
 
 /**

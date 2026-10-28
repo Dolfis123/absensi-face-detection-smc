@@ -70,6 +70,19 @@ const MIGRATIONS: { id: string; up: () => Promise<void> }[] = [
       }
     },
   },
+  {
+    id: '2026-10-29-hari-off',
+    async up() {
+      // Hari Off di roster disimpan sebagai baris dengan shift_id NULL. Pastikan kolomnya boleh NULL.
+      const rows = await sequelize.query<{ IS_NULLABLE: string; COLUMN_TYPE: string }>(
+        "SELECT IS_NULLABLE, COLUMN_TYPE FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'employee_schedules' AND COLUMN_NAME = 'shift_id'",
+        { type: QueryTypes.SELECT },
+      );
+      if (rows[0] && rows[0].IS_NULLABLE === 'NO') {
+        await sequelize.query(`ALTER TABLE \`employee_schedules\` MODIFY \`shift_id\` ${rows[0].COLUMN_TYPE} NULL`);
+      }
+    },
+  },
 ];
 
 export async function runMigrations() {

@@ -2,7 +2,8 @@ export type Role = 'SUPER_ADMIN' | 'KOORDINATOR' | 'KARYAWAN';
 // ISTIRAHAT = mulai istirahat, KEMBALI = selesai istirahat
 export type SlotType = 'MASUK' | 'ISTIRAHAT' | 'KEMBALI' | 'PULANG';
 // ABSEN_SEKALI = hadir tapi absennya tidak lengkap (hanya Masuk, atau tanpa Masuk)
-export type DayStatus = 'TEPAT_WAKTU' | 'TERLAMBAT' | 'ABSEN_SEKALI' | 'ALFA' | 'IZIN' | 'SAKIT' | 'CUTI' | 'LIBUR' | 'OFF' | 'BELUM';
+// OFF = belum dijadwalkan di roster; DAY_OFF = hari Off yang sengaja ditetapkan di roster
+export type DayStatus = 'TEPAT_WAKTU' | 'TERLAMBAT' | 'ABSEN_SEKALI' | 'ALFA' | 'IZIN' | 'SAKIT' | 'CUTI' | 'LIBUR' | 'OFF' | 'DAY_OFF' | 'BELUM';
 
 export interface PublicUser {
   id: number;
@@ -70,6 +71,7 @@ export interface Summary {
   cuti: number;
   alfa: number;
   libur: number;
+  hariOff: number;
   hariKerja: number;
   istirahatLebih: number;
   lupaKembali: number;

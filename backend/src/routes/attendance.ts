@@ -128,6 +128,7 @@ router.post(
     // 5) Roster harian → slot aktif
     const schedule = await EmployeeSchedule.findOne({ where: { userId: user.id, date: now.date } });
     if (!schedule) throw new HttpError(409, `${user.fullName}, Anda tidak memiliki jadwal shift hari ini.`);
+    if (schedule.shiftId === null) throw new HttpError(409, `${user.fullName}, hari ini jadwal Anda Off (libur). Absensi tidak diperlukan.`);
     const shift = (await loadShifts()).get(schedule.shiftId);
     if (!shift) throw new HttpError(500, 'Data shift tidak ditemukan');
 

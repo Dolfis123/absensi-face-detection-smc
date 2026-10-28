@@ -69,6 +69,7 @@ export async function applyCorrection(input: CorrectionInput) {
           transaction,
         });
         if (!schedule) throw new HttpError(400, 'Karyawan tidak memiliki jadwal pada tanggal tersebut');
+        if (schedule.shiftId === null) throw new HttpError(400, 'Karyawan dijadwalkan Off pada tanggal tersebut. Ubah roster dulu bila ia ternyata masuk.');
         const localTime = `${input.time}:00`;
         const created = await Attendance.create(
           {
