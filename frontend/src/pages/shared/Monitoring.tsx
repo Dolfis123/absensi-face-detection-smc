@@ -2,12 +2,12 @@ import { useEffect, useState } from 'react';
 import { BreakCell, SlotTime, StatusBadge, useLoad } from '../../components/attendance';
 import { Icon } from '../../components/icons';
 import { Alert, Card, cx, Empty, Loading, PageHeader, PersonCell, SearchInput, Table, Td, Th } from '../../components/ui';
-import { api, DayRecord, DayStatus } from '../../lib/api';
+import { api, DayRecord, DayStatus, Role } from '../../lib/api';
 import { fmtDate, STATUS_STYLE } from '../../lib/format';
 
 interface TodayResponse {
   serverTime: { date: string; time: string };
-  rows: (DayRecord & { user: { id: number; fullName: string; nik: string; phone: string } })[];
+  rows: (DayRecord & { user: { id: number; fullName: string; nik: string; phone: string; role: Role } })[];
 }
 
 const ORDER: DayStatus[] = ['TEPAT_WAKTU', 'TERLAMBAT', 'BELUM', 'ALFA', 'IZIN', 'SAKIT', 'CUTI', 'LIBUR', 'OFF'];
@@ -97,7 +97,7 @@ export default function Monitoring() {
               {visible.map((r) => (
                 <tr key={r.user.id} className={r.status === 'OFF' ? 'opacity-60' : ''}>
                   <Td>
-                    <PersonCell name={r.user.fullName} sub={r.user.nik} />
+                    <PersonCell name={r.user.fullName} sub={r.user.role === 'KOORDINATOR' ? `${r.user.nik} · Koordinator` : r.user.nik} />
                   </Td>
                   <Td className="text-slate-600">{r.shiftName ?? '—'}</Td>
                   <Td>

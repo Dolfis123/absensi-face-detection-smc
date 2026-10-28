@@ -232,6 +232,8 @@ router.patch(
       .parse(req.body);
     const leave = await LeaveRequest.findByPk(Number(req.params.id));
     if (!leave) throw new HttpError(404, 'Pengajuan tidak ditemukan');
+    // Koordinator juga mengajukan izin; pengajuan sendiri harus diputuskan orang lain
+    if (leave.userId === currentUser(req).id) throw new HttpError(403, 'Pengajuan Anda sendiri harus diputuskan oleh Super Admin');
     if (leave.status !== 'PENDING') throw new HttpError(409, 'Pengajuan ini sudah diputuskan');
     if (body.decision === 'REJECTED' && !body.note) throw new HttpError(400, 'Alasan penolakan wajib diisi');
     await leave.update({
@@ -274,6 +276,7 @@ router.patch(
       .parse(req.body);
     const issue = await AttendanceIssue.findByPk(Number(req.params.id));
     if (!issue) throw new HttpError(404, 'Laporan tidak ditemukan');
+    if (issue.userId === currentUser(req).id) throw new HttpError(403, 'Laporan Anda sendiri harus ditinjau oleh Super Admin');
     await issue.update({ status: body.status, reviewNote: body.note, reviewedById: currentUser(req).id });
     res.json(issue);
   }),

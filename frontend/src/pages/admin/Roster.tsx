@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useLoad } from '../../components/attendance';
 import { Alert, Button, Card, Loading, PageHeader } from '../../components/ui';
-import { api, errMsg, Holiday, Shift } from '../../lib/api';
+import { api, errMsg, Holiday, Role, Shift } from '../../lib/api';
 import { addDays, mondayOf, shortDay, todayWIT } from '../../lib/format';
 
 interface RosterResponse {
-  employees: { id: number; fullName: string; nik: string; defaultShiftId: number | null }[];
+  employees: { id: number; fullName: string; nik: string; role: Role; defaultShiftId: number | null }[];
   schedules: { userId: number; date: string; shiftId: number }[];
 }
 
@@ -130,7 +130,7 @@ export default function Roster() {
                 <tr key={e.id} className="border-t border-slate-100">
                   <td className="sticky left-0 whitespace-nowrap bg-white px-2 py-1.5">
                     <div className="font-medium">{e.fullName}</div>
-                    <div className="text-xs text-slate-400">{e.nik}</div>
+                    <div className="text-xs text-slate-400">{e.nik}{e.role === 'KOORDINATOR' && ' · Koordinator'}</div>
                   </td>
                   {dates.map((d) => {
                     const v = draft.get(key(e.id, d)) ?? null;

@@ -11,7 +11,8 @@ import { addDays, DATE_RE, MONTH_RE, monthRange, witNow } from '../utils/time';
 
 /** Menu pribadi karyawan parkir (setelah login). */
 const router = Router();
-router.use(requireRole('KARYAWAN'));
+// Koordinator juga absen, jadi ikut punya menu pribadi (rekap, jadwal, izin, kendala)
+router.use(requireRole('KARYAWAN', 'KOORDINATOR'));
 
 router.get(
   '/recap',

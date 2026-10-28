@@ -106,6 +106,8 @@ export function resolveActiveSlot(
   shift: ShiftWithSlots,
   nowMinutes: number,
   recorded: Map<SlotType, { localTime: string }>,
+  // Koordinator Lapangan hanya absen Masuk & Pulang (tanpa istirahat)
+  opts: { allowBreak: boolean } = { allowBreak: true },
 ): SlotResolution {
   for (const slot of shift.slots) {
     const start = hhmmToMinutes(slot.windowStart);
@@ -117,7 +119,7 @@ export function resolveActiveSlot(
     return { ok: true, slotType: slot.type, status: late ? 'TERLAMBAT' : 'TEPAT_WAKTU' };
   }
 
-  const b = activeBreak(shift);
+  const b = opts.allowBreak ? activeBreak(shift) : null;
   const started = recorded.get('ISTIRAHAT');
   const back = recorded.get('KEMBALI');
   if (b) {

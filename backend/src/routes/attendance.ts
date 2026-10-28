@@ -8,7 +8,9 @@ import {
   GeofenceSetting,
   Holiday,
   LeaveRequest,
+  ATTENDEE_ROLES,
   isFaceOutdated,
+  takesBreak,
   parseEmbeddings,
   User,
 } from '../models';
@@ -83,7 +85,7 @@ router.post(
     if (holiday) throw new HttpError(409, `Hari ini libur (${holiday.name}). Absensi tidak diperlukan.`);
 
     // 3) Pencocokan wajah terhadap seluruh karyawan aktif yang sudah terdaftar wajahnya
-    const employees = await User.findAll({ where: { role: 'KARYAWAN', isActive: true } });
+    const employees = await User.findAll({ where: { role: [...ATTENDEE_ROLES], isActive: true } });
     const candidates = employees
       .map((u) => ({ id: u.id, embeddings: parseEmbeddings(u.faceEmbedding) }))
       .filter((c): c is { id: number; embeddings: number[][] } => c.embeddings !== null);
@@ -130,7 +132,9 @@ router.post(
     if (!shift) throw new HttpError(500, 'Data shift tidak ditemukan');
 
     const existing = await Attendance.findAll({ where: { userId: user.id, date: now.date, active: true } });
-    const resolution = resolveActiveSlot(shift, now.minutes, new Map(existing.map((a) => [a.slotType, a])));
+    const resolution = resolveActiveSlot(shift, now.minutes, new Map(existing.map((a) => [a.slotType, a])), {
+      allowBreak: takesBreak(user.role),
+    });
     if (!resolution.ok) throw new HttpError(409, `${user.fullName}: ${resolution.reason}`);
 
     const record = await Attendance.create({

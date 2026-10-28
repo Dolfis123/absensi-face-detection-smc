@@ -73,7 +73,7 @@ export interface Summary {
 }
 
 export interface EmployeeRecap {
-  user: { id: number; fullName: string; nik: string; phone: string };
+  user: { id: number; fullName: string; nik: string; phone: string; role: Role };
   summary: Summary;
   days: DayRecord[];
 }

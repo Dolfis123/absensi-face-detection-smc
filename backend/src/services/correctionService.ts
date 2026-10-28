@@ -1,4 +1,4 @@
-import { Attendance, AttendanceIssue, AuditLog, EmployeeSchedule, SlotType, User, sequelize } from '../models';
+import { Attendance, AttendanceIssue, AuditLog, EmployeeSchedule, isAttendee, SlotType, User, sequelize } from '../models';
 import { AUDIT_TOKEN } from '../utils/audit';
 import { HttpError } from '../utils/http';
 
@@ -29,7 +29,7 @@ const snapshot = (a: Attendance) => ({
  */
 export async function applyCorrection(input: CorrectionInput) {
   const target = await User.findByPk(input.userId);
-  if (!target || target.role !== 'KARYAWAN') throw new HttpError(404, 'Karyawan tidak ditemukan');
+  if (!target || !isAttendee(target.role)) throw new HttpError(404, 'Karyawan tidak ditemukan');
 
   return sequelize.transaction(async (transaction) => {
     // Izin sesi untuk trigger MySQL `attendances_lock_*`

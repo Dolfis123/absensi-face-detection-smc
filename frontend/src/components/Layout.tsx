@@ -45,10 +45,20 @@ export const NAV_GROUPS: Record<Role, NavGroup[]> = {
       ],
     },
     {
+      // Koordinator juga absen (Masuk & Pulang), jadi punya rekap & pengajuan pribadi
+      title: 'Kehadiran Saya',
+      items: [
+        { to: '/app/rekap', label: 'Rekap Saya', icon: 'chart' },
+        { to: '/app/jadwal', label: 'Jadwal Saya', icon: 'calendar' },
+        { to: '/app/izin', label: 'Izin / Sakit / Cuti', icon: 'send' },
+        { to: '/app/kendala', label: 'Lapor Kendala', icon: 'alert' },
+      ],
+    },
+    {
       title: 'Tinjauan',
       items: [
-        { to: '/app/review-izin', label: 'Pengajuan Izin', icon: 'send' },
-        { to: '/app/review-kendala', label: 'Laporan Kendala', icon: 'alert' },
+        { to: '/app/review-izin', label: 'Pengajuan Izin', icon: 'inbox' },
+        { to: '/app/review-kendala', label: 'Laporan Kendala', icon: 'shield' },
       ],
     },
     {

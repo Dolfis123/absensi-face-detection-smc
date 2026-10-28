@@ -110,7 +110,7 @@ export default function Laporan() {
               {data?.map((r) => (
                 <tr key={r.user.id}>
                   <Td>
-                    <PersonCell name={r.user.fullName} sub={r.user.nik} />
+                    <PersonCell name={r.user.fullName} sub={r.user.role === 'KOORDINATOR' ? `${r.user.nik} · Koordinator` : r.user.nik} />
                   </Td>
                   <Td className="text-center">{r.summary.hariKerja}</Td>
                   <Td className="text-center text-emerald-700">{r.summary.tepatWaktu}</Td>

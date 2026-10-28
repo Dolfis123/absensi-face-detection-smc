@@ -44,7 +44,8 @@ function Beranda() {
 
 const ADMIN: Role[] = ['SUPER_ADMIN'];
 const REVIEWERS: Role[] = ['SUPER_ADMIN', 'KOORDINATOR'];
-const EMPLOYEE: Role[] = ['KARYAWAN'];
+// Karyawan Parkir & Koordinator sama-sama absen, jadi sama-sama punya menu kehadiran pribadi
+const EMPLOYEE: Role[] = ['KARYAWAN', 'KOORDINATOR'];
 
 export default function App() {
   return (

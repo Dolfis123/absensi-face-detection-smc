@@ -2,9 +2,11 @@ import { useState } from 'react';
 import { RequestBadge, useLoad } from '../../components/attendance';
 import { Alert, Button, Card, Empty, Field, Loading, Modal, PageHeader, Select, Textarea } from '../../components/ui';
 import { api, errMsg, LeaveRequest, openProtectedFile } from '../../lib/api';
+import { useAuth } from '../../lib/auth';
 import { fmtDate } from '../../lib/format';
 
 export default function ReviewIzin() {
+  const { user } = useAuth();
   const [status, setStatus] = useState('PENDING');
   const { data, error, loading, reload } = useLoad(
     () => api.get<LeaveRequest[]>(`/leaves${status ? `?status=${status}` : ''}`),
@@ -78,7 +80,7 @@ export default function ReviewIzin() {
                     </p>
                   )}
                 </div>
-                {l.status === 'PENDING' && (
+                {l.status === 'PENDING' && l.userId !== user?.id && (
                   <div className="flex gap-2">
                     <Button variant="success" onClick={() => setTarget({ leave: l, decision: 'APPROVED' })}>
                       Setujui

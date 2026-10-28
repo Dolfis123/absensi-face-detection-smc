@@ -1,6 +1,7 @@
 import { useLoad } from '../../components/attendance';
 import { Alert, Badge, Card, Empty, Loading, PageHeader } from '../../components/ui';
 import { api, Holiday, Shift } from '../../lib/api';
+import { useAuth } from '../../lib/auth';
 import { addDays, fmtDate, SLOT_LABEL, todayWIT } from '../../lib/format';
 
 interface ScheduleResponse {
@@ -9,6 +10,7 @@ interface ScheduleResponse {
 }
 
 export default function Jadwal() {
+  const { user } = useAuth();
   const today = todayWIT();
   const { data, error, loading } = useLoad(() =>
     Promise.all([
@@ -68,7 +70,7 @@ export default function Jadwal() {
                     Absen {SLOT_LABEL[sl.type]}: {sl.windowStart}–{sl.windowEnd}
                   </li>
                 ))}
-                {s.breakConfig?.enabled && (
+                {s.breakConfig?.enabled && user?.role === 'KARYAWAN' && (
                   <li>
                     Istirahat bergantian: mulai antara {s.breakConfig.windowStart}–{s.breakConfig.windowEnd}, maks.{' '}
                     {s.breakConfig.maxMinutes} menit (+{s.breakConfig.toleranceMinutes} menit toleransi). Absen saat mulai & saat kembali.

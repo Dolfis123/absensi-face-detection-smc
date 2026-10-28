@@ -76,7 +76,7 @@ export default function ReviewKendala() {
                     </p>
                   )}
                 </div>
-                {!['RESOLVED', 'REJECTED'].includes(i.status) && (
+                {!['RESOLVED', 'REJECTED'].includes(i.status) && i.userId !== user?.id && (
                   <Button
                     variant="secondary"
                     onClick={() => {

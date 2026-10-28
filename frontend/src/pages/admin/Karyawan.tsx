@@ -195,7 +195,8 @@ export default function Karyawan() {
   if (!data) return <Alert>{error}</Alert>;
   const [users, shifts] = data;
   const shiftName = (id: number | null) => shifts.find((s) => s.id === id)?.name ?? '—';
-  const employees = users.filter((u) => u.role === 'KARYAWAN');
+  // Semua yang wajib absen (Karyawan Parkir + Koordinator)
+  const employees = users.filter((u) => u.role !== 'SUPER_ADMIN');
   const needle = q.trim().toLowerCase();
   const visible = users.filter(
     (u) => !needle || [u.fullName, u.nik, u.username].some((v) => v.toLowerCase().includes(needle)),
@@ -243,7 +244,8 @@ export default function Karyawan() {
         if (form.password.length < 8) throw new Error('Password minimal 8 karakter');
         if (form.password !== form.passwordConfirm) throw new Error('Konfirmasi password tidak sama dengan password');
       }
-      const needsFace = mode.type === 'face' || (mode.type === 'create' && form.role === 'KARYAWAN');
+      // Karyawan Parkir & Koordinator sama-sama wajib daftar wajah
+      const needsFace = mode.type === 'face' || mode.type === 'create';
       if (needsFace && face.length < MIN_FACE_PHOTOS) throw new Error(`Ambil minimal ${MIN_FACE_PHOTOS} foto wajah terlebih dahulu`);
       let similarOverride: { reason: string; pin: string; otherPins: Record<string, string> } | undefined;
       if (similar) {
@@ -301,7 +303,7 @@ export default function Karyawan() {
     <>
       <PageHeader
         title="Data Pengguna"
-        subtitle={`${employees.length} karyawan parkir · ${employees.filter((e) => e.hasFace).length} wajah terdaftar${employees.some((e) => e.faceOutdated) ? ` · ${employees.filter((e) => e.faceOutdated).length} perlu daftar ulang wajah` : ""}`}
+        subtitle={`${employees.length} wajib absen (karyawan & koordinator) · ${employees.filter((e) => e.hasFace).length} wajah terdaftar${employees.some((e) => e.faceOutdated) ? ` · ${employees.filter((e) => e.faceOutdated).length} perlu daftar ulang wajah` : ""}`}
         actions={
           <Button icon="plus" onClick={() => open({ type: 'create' })}>
             Tambah Pengguna
@@ -352,7 +354,7 @@ export default function Karyawan() {
                 <Td>{u.phone}</Td>
                 <Td>{u.role === 'SUPER_ADMIN' ? '—' : shiftName(u.defaultShiftId)}</Td>
                 <Td>
-                  {u.role !== 'KARYAWAN' ? (
+                  {u.role === 'SUPER_ADMIN' ? (
                     <span className="text-slate-300">—</span>
                   ) : u.faceOutdated ? (
                     <span title="Data wajah dari mesin pengenal lama. Daftarkan ulang lewat tombol Wajah agar bisa absen.">
@@ -387,12 +389,12 @@ export default function Karyawan() {
                       <Button variant="ghost" onClick={() => open({ type: 'edit', user: u })}>
                         Edit
                       </Button>
-                      {u.role === 'KARYAWAN' && (
+                      {u.role !== 'SUPER_ADMIN' && (
                         <Button variant="ghost" onClick={() => open({ type: 'face', user: u })}>
                           Wajah
                         </Button>
                       )}
-                      {u.role === 'KARYAWAN' && (
+                      {u.role !== 'SUPER_ADMIN' && (
                         <Button variant="ghost" onClick={() => open({ type: 'pin', user: u })}>
                           PIN
                         </Button>
@@ -537,7 +539,7 @@ export default function Karyawan() {
               )}
             </>
           )}
-          {(mode?.type === 'face' || (mode?.type === 'create' && form.role === 'KARYAWAN')) && (
+          {(mode?.type === 'face' || mode?.type === 'create') && (
             <Field label="Data Wajah (Face Embedding · 3–5 foto)">
               <FaceCapture photos={face} onChange={setFace} />
             </Field>

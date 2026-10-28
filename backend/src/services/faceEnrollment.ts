@@ -1,5 +1,5 @@
 import { env } from '../config/env';
-import { parseEmbeddings, User } from '../models';
+import { ATTENDEE_ROLES, parseEmbeddings, User } from '../models';
 import { DISTANCE_WARN, minDistance } from '../utils/faceMath';
 import { HttpError } from '../utils/http';
 import { enrollFaces, EnrollResult } from './faceClient';
@@ -30,7 +30,7 @@ export async function enrollWithDuplicateCheck(
   const result = await enrollFaces(images);
 
   const scored: SimilarFace[] = [];
-  for (const other of await User.findAll({ where: { role: 'KARYAWAN' } })) {
+  for (const other of await User.findAll({ where: { role: [...ATTENDEE_ROLES] } })) {
     if (other.id === excludeUserId) continue;
     const known = parseEmbeddings(other.faceEmbedding);
     if (known) scored.push({ user: other, distance: minDistance(result.embeddings, known) });

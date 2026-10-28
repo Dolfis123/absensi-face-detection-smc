@@ -41,7 +41,7 @@ export default function Koreksi() {
   if (loading && !data) return <Loading />;
   if (!data) return <Alert>{error}</Alert>;
   const [users, logs, issues] = data;
-  const employees = users.filter((u) => u.role === 'KARYAWAN');
+  const employees = users.filter((u) => u.role !== 'SUPER_ADMIN');
   const openIssues = issues.filter((i) => !['RESOLVED', 'REJECTED'].includes(i.status));
 
   async function submit(e: FormEvent) {

@@ -6,14 +6,14 @@
  * Hanya membaca database, tidak mengubah apa pun.
  */
 import { env } from '../config/env';
-import { isFaceOutdated, parseEmbeddings, sequelize, User } from '../models';
+import { ATTENDEE_ROLES, isFaceOutdated, parseEmbeddings, sequelize, User } from '../models';
 import { DISTANCE_DANGER, DISTANCE_WARN, minDistance, spread } from '../utils/faceMath';
 
 const SPREAD_WARN = 0.5;
 
 async function main() {
   await sequelize.authenticate();
-  const users = await User.findAll({ where: { role: 'KARYAWAN' }, order: [['fullName', 'ASC']] });
+  const users = await User.findAll({ where: { role: [...ATTENDEE_ROLES] }, order: [['fullName', 'ASC']] });
   const people = users
     .map((u) => ({ user: u, embeddings: parseEmbeddings(u.faceEmbedding) }))
     .filter((p): p is { user: User; embeddings: number[][] } => p.embeddings !== null);

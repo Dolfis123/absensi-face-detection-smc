@@ -4,7 +4,10 @@ import {
   EmployeeSchedule,
   Holiday,
   LeaveRequest,
+  ATTENDEE_ROLES,
   LeaveType,
+  Role,
+  takesBreak,
   SlotType,
   User,
 } from '../models';
@@ -58,7 +61,7 @@ export interface Summary {
 }
 
 export interface EmployeeRecap {
-  user: { id: number; fullName: string; nik: string; phone: string };
+  user: { id: number; fullName: string; nik: string; phone: string; role: Role };
   summary: Summary;
   days: DayRecord[];
 }
@@ -85,7 +88,7 @@ const toMinutes = (hhmmss: string) => Number(hhmmss.slice(0, 2)) * 60 + Number(h
  */
 export async function buildRecap(from: string, to: string, userIds?: number[]): Promise<EmployeeRecap[]> {
   const users = await User.findAll({
-    where: { role: 'KARYAWAN', ...(userIds ? { id: userIds } : {}) },
+    where: { role: [...ATTENDEE_ROLES], ...(userIds ? { id: userIds } : {}) },
     order: [['fullName', 'ASC']],
   });
   const ids = users.map((u) => u.id);
@@ -144,7 +147,7 @@ export async function buildRecap(from: string, to: string, userIds?: number[]): 
       summary.hariKerja++;
       const start = slots.ISTIRAHAT?.time ?? null;
       const end = slots.KEMBALI?.time ?? null;
-      const b = activeBreak(shift);
+      const b = takesBreak(user.role) ? activeBreak(shift) : null;
       if (start || end || b) {
         const returnBy = b ? breakReturnDeadline(b) : null;
         const pastReturn = date < now.date || (date === now.date && returnBy !== null && now.minutes > returnBy);
@@ -176,7 +179,7 @@ export async function buildRecap(from: string, to: string, userIds?: number[]): 
     });
 
     return {
-      user: { id: user.id, fullName: user.fullName, nik: user.nik, phone: user.phone },
+      user: { id: user.id, fullName: user.fullName, nik: user.nik, phone: user.phone, role: user.role },
       summary,
       days,
     };

@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { Op } from 'sequelize';
 import { z } from 'zod';
 import { currentUser, requireRole } from '../middleware/auth';
-import { EmployeeSchedule, Holiday, SLOT_TYPES, ShiftBreak, ShiftChangeLog, User, sequelize } from '../models';
+import { ATTENDEE_ROLES, EmployeeSchedule, Holiday, SLOT_TYPES, ShiftBreak, ShiftChangeLog, User, sequelize } from '../models';
 import { getLateTolerance, saveLateTolerance } from '../services/settings';
 import { BreakInput, loadShifts, SlotInput, validateShiftTimes } from '../services/shiftService';
 import { ah, HttpError } from '../utils/http';
@@ -27,11 +27,11 @@ router.get(
   ah(async (req, res) => {
     const { from, to } = rangeQuery.parse(req.query);
     const [employees, schedules] = await Promise.all([
-      User.findAll({ where: { role: 'KARYAWAN', isActive: true }, order: [['fullName', 'ASC']] }),
+      User.findAll({ where: { role: [...ATTENDEE_ROLES], isActive: true }, order: [['fullName', 'ASC']] }),
       EmployeeSchedule.findAll({ where: { date: { [Op.between]: [from, to] } } }),
     ]);
     res.json({
-      employees: employees.map((u) => ({ id: u.id, fullName: u.fullName, nik: u.nik, defaultShiftId: u.defaultShiftId })),
+      employees: employees.map((u) => ({ id: u.id, fullName: u.fullName, nik: u.nik, role: u.role, defaultShiftId: u.defaultShiftId })),
       schedules: schedules.map((s) => ({ userId: s.userId, date: s.date, shiftId: s.shiftId })),
     });
   }),
@@ -78,7 +78,7 @@ router.post(
     const today = witNow().date;
     const dates = eachDate(from < today ? today : from, to);
     const [employees, existing, holidays] = await Promise.all([
-      User.findAll({ where: { role: 'KARYAWAN', isActive: true } }),
+      User.findAll({ where: { role: [...ATTENDEE_ROLES], isActive: true } }),
       EmployeeSchedule.findAll({ where: { date: { [Op.between]: [from, to] } } }),
       Holiday.findAll({ where: { date: { [Op.between]: [from, to] } } }),
     ]);

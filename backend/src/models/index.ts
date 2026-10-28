@@ -13,6 +13,11 @@ import { HttpError } from '../utils/http';
 
 export const ROLES = ['SUPER_ADMIN', 'KOORDINATOR', 'KARYAWAN'] as const;
 export type Role = (typeof ROLES)[number];
+/** Role yang wajib absen dengan wajah (Super Admin tidak absen). */
+export const ATTENDEE_ROLES = ['KARYAWAN', 'KOORDINATOR'] as const;
+export const isAttendee = (role: Role) => (ATTENDEE_ROLES as readonly Role[]).includes(role);
+/** Hanya Karyawan Parkir yang absen istirahat; Koordinator cukup Masuk & Pulang. */
+export const takesBreak = (role: Role) => role === 'KARYAWAN';
 // ISTIRAHAT = mulai istirahat, KEMBALI = selesai istirahat. KEMBALI ditaruh di akhir agar
 // ALTER ENUM pada database lama cukup menambah nilai baru (lihat migrations.ts).
 export const SLOT_TYPES = ['MASUK', 'ISTIRAHAT', 'PULANG', 'KEMBALI'] as const;

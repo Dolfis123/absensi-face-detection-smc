@@ -8,6 +8,7 @@ import {
   AuditLog,
   EmployeeSchedule,
   FaceOverrideLog,
+  isAttendee,
   GeofenceSetting,
   Holiday,
   SLOT_TYPES,
@@ -121,11 +122,11 @@ router.post(
     const body = createUserSchema.parse(req.body);
     assertPasswordConfirmed(body.password, body.passwordConfirm);
     await assertShift(body.defaultShiftId);
-    if (body.role === 'KARYAWAN' && !body.faceImages) {
+    if (isAttendee(body.role) && !body.faceImages) {
       throw new HttpError(400, 'Data wajah wajib diambil untuk Karyawan Parkir');
     }
     const enrollment =
-      body.role === 'KARYAWAN' && body.faceImages
+      isAttendee(body.role) && body.faceImages
         ? await enrollWithDuplicateCheck(body.faceImages, undefined, !!body.similarOverride)
         : null;
     const prepared = enrollment ? await prepareSimilarOverride(enrollment.similar, body.similarOverride, null) : null;
@@ -168,7 +169,7 @@ router.put(
     if (body.password) assertPasswordConfirmed(body.password, body.passwordConfirm);
     const user = await loadEditableUser(Number(req.params.id));
     await assertShift(body.defaultShiftId);
-    if (body.role === 'KARYAWAN' && !user.faceEmbedding) {
+    if (isAttendee(body.role) && !user.faceEmbedding) {
       throw new HttpError(400, 'Daftarkan data wajah terlebih dahulu sebelum menjadikan Karyawan Parkir');
     }
     await user.update({
@@ -193,7 +194,7 @@ router.put(
       .extend({ faceImages })
       .parse(req.body);
     const user = await loadEditableUser(Number(req.params.id));
-    if (user.role !== 'KARYAWAN') throw new HttpError(400, 'Data wajah hanya untuk Karyawan Parkir');
+    if (!isAttendee(user.role)) throw new HttpError(400, 'Data wajah hanya untuk Karyawan Parkir dan Koordinator');
     const enrollment = await enrollWithDuplicateCheck(images, user.id, !!similarOverride);
     const prepared = await prepareSimilarOverride(enrollment.similar, similarOverride, user.id);
     await sequelize.transaction(async (transaction) => {
@@ -212,7 +213,7 @@ router.put(
   ah(async (req, res) => {
     const { pin } = z.object({ pin: z.string().regex(PIN_RE, 'PIN harus 4–6 angka').nullable() }).parse(req.body);
     const user = await loadEditableUser(Number(req.params.id));
-    if (user.role !== 'KARYAWAN') throw new HttpError(400, 'PIN absen hanya untuk Karyawan Parkir');
+    if (!isAttendee(user.role)) throw new HttpError(400, 'PIN absen hanya untuk Karyawan Parkir dan Koordinator');
     if (pin) await assertPinAvailable(pin, [user.id]);
     await user.update({ pinHash: pin ? await hashPin(pin) : null });
     res.json(user.toPublic());
