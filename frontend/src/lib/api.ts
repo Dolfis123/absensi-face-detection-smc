@@ -1,7 +1,8 @@
 export type Role = 'SUPER_ADMIN' | 'KOORDINATOR' | 'KARYAWAN';
 // ISTIRAHAT = mulai istirahat, KEMBALI = selesai istirahat
 export type SlotType = 'MASUK' | 'ISTIRAHAT' | 'KEMBALI' | 'PULANG';
-export type DayStatus = 'TEPAT_WAKTU' | 'TERLAMBAT' | 'ALFA' | 'IZIN' | 'SAKIT' | 'CUTI' | 'LIBUR' | 'OFF' | 'BELUM';
+// ABSEN_SEKALI = hadir tapi absennya tidak lengkap (hanya Masuk, atau tanpa Masuk)
+export type DayStatus = 'TEPAT_WAKTU' | 'TERLAMBAT' | 'ABSEN_SEKALI' | 'ALFA' | 'IZIN' | 'SAKIT' | 'CUTI' | 'LIBUR' | 'OFF' | 'BELUM';
 
 export interface PublicUser {
   id: number;
@@ -62,6 +63,8 @@ export interface Summary {
   hadir: number;
   tepatWaktu: number;
   terlambat: number;
+  /** Hadir tapi absen tidak lengkap (hanya masuk / tanpa masuk) */
+  absenSekali: number;
   izin: number;
   sakit: number;
   cuti: number;

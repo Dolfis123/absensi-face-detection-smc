@@ -65,7 +65,7 @@ export default function BerandaPengawas() {
   const rows = data.today.rows;
   const count = (...s: string[]) => rows.filter((r) => s.includes(r.status)).length;
   const scheduled = rows.filter((r) => r.shiftId !== null).length;
-  const hadir = count('TEPAT_WAKTU', 'TERLAMBAT');
+  const hadir = count('TEPAT_WAKTU', 'TERLAMBAT', 'ABSEN_SEKALI');
   const terlambat = count('TERLAMBAT');
   const belum = rows.filter((r) => r.status === 'BELUM');
   const alfa = count('ALFA');
@@ -75,10 +75,11 @@ export default function BerandaPengawas() {
   const needFace = data.users.filter((u) => u.role !== 'SUPER_ADMIN' && u.isActive && (u.faceOutdated || u.faceCount < 3));
 
   const trend: TrendPoint[] = Array.from({ length: 7 }, (_, i) => addDays(data.today.serverTime.date, i - 6)).map((date) => {
-    const p: TrendPoint = { date, tepat: 0, terlambat: 0, izin: 0, alfa: 0 };
+    const p: TrendPoint = { date, tepat: 0, terlambat: 0, sekali: 0, izin: 0, alfa: 0 };
     for (const r of data.recap) {
       const s = r.days.find((d) => d.date === date)?.status;
       if (s === 'TEPAT_WAKTU') p.tepat++;
+      else if (s === 'ABSEN_SEKALI') p.sekali++;
       else if (s === 'TERLAMBAT') p.terlambat++;
       else if (s === 'IZIN' || s === 'SAKIT' || s === 'CUTI') p.izin++;
       else if (s === 'ALFA') p.alfa++;

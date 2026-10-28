@@ -38,6 +38,7 @@ export const STATUS_STYLE: Record<DayStatus, StatusStyle> = {
   LIBUR: { label: 'Libur', cls: 'bg-slate-100 text-slate-700 ring-1 ring-slate-500/15', dot: 'bg-slate-500' },
   OFF: { label: 'Tidak Dijadwalkan', cls: 'bg-slate-50 text-slate-500 ring-1 ring-slate-500/10', dot: 'bg-slate-300' },
   BELUM: { label: 'Belum Absen', cls: 'bg-slate-100 text-slate-600 ring-1 ring-slate-500/15', dot: 'bg-slate-400' },
+  ABSEN_SEKALI: { label: 'Absen Sekali', cls: 'bg-violet-50 text-violet-700 ring-1 ring-violet-600/15', dot: 'bg-violet-500' },
 };
 
 export const REQUEST_STATUS: Record<string, StatusStyle> = {

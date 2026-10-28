@@ -105,6 +105,7 @@ const STATUS_LABEL: Record<string, string> = {
   LIBUR: 'Libur',
   OFF: 'Tidak Dijadwalkan',
   BELUM: 'Belum Absen',
+  ABSEN_SEKALI: 'Absen Sekali',
 };
 
 router.get(
@@ -150,7 +151,7 @@ router.get(
     sendCsv(
       res,
       `rekap-bulanan-SMC_${month}.csv`,
-      ['NIK', 'Nama', 'Hari Kerja', 'Hadir', 'Tepat Waktu', 'Terlambat', 'Izin', 'Sakit', 'Cuti', 'Alfa', 'Libur', 'Istirahat Lebih', 'Lupa Absen Kembali', 'Kehadiran (%)'],
+      ['NIK', 'Nama', 'Hari Kerja', 'Hadir', 'Tepat Waktu', 'Terlambat', 'Absen Sekali', 'Izin', 'Sakit', 'Cuti', 'Alfa', 'Libur', 'Istirahat Lebih', 'Lupa Absen Kembali', 'Kehadiran (%)'],
       recap.map(({ user, summary: s }) => [
         user.nik,
         user.fullName,
@@ -158,6 +159,7 @@ router.get(
         s.hadir,
         s.tepatWaktu,
         s.terlambat,
+        s.absenSekali,
         s.izin,
         s.sakit,
         s.cuti,

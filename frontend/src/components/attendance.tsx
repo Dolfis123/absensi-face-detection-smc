@@ -19,6 +19,7 @@ export const RequestBadge = ({ status }: { status: string }) => (
 const SUMMARY_ITEMS: { key: keyof Summary; label: string; bar: string }[] = [
   { key: 'tepatWaktu', label: 'Tepat Waktu', bar: 'bg-emerald-500' },
   { key: 'terlambat', label: 'Terlambat', bar: 'bg-amber-500' },
+  { key: 'absenSekali', label: 'Absen Sekali', bar: 'bg-violet-500' },
   { key: 'izin', label: 'Izin', bar: 'bg-sky-500' },
   { key: 'sakit', label: 'Sakit', bar: 'bg-violet-500' },
   { key: 'cuti', label: 'Cuti', bar: 'bg-indigo-500' },
@@ -29,7 +30,7 @@ const SUMMARY_ITEMS: { key: keyof Summary; label: string; bar: string }[] = [
 
 export function SummaryGrid({ summary }: { summary: Summary }) {
   return (
-    <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 xl:grid-cols-8">
+    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5 2xl:grid-cols-9">
       {SUMMARY_ITEMS.map((i) => (
         <div key={i.key} className="relative overflow-hidden rounded-2xl border border-slate-200/80 bg-white p-4 shadow-card">
           <span className={`absolute inset-y-0 left-0 w-1 ${i.bar}`} />

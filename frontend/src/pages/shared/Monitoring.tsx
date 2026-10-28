@@ -10,7 +10,7 @@ interface TodayResponse {
   rows: (DayRecord & { user: { id: number; fullName: string; nik: string; phone: string; role: Role } })[];
 }
 
-const ORDER: DayStatus[] = ['TEPAT_WAKTU', 'TERLAMBAT', 'BELUM', 'ALFA', 'IZIN', 'SAKIT', 'CUTI', 'LIBUR', 'OFF'];
+const ORDER: DayStatus[] = ['TEPAT_WAKTU', 'TERLAMBAT', 'ABSEN_SEKALI', 'BELUM', 'ALFA', 'IZIN', 'SAKIT', 'CUTI', 'LIBUR', 'OFF'];
 
 export default function Monitoring() {
   const { data, error, loading, reload } = useLoad(() => api.get<TodayResponse>('/monitor/today'));

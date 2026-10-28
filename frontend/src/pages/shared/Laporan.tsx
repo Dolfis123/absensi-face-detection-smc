@@ -99,6 +99,7 @@ export default function Laporan() {
                 <Th className="text-center">Hari Kerja</Th>
                 <Th className="text-center">Tepat</Th>
                 <Th className="text-center">Terlambat</Th>
+                <Th className="text-center">Absen Sekali</Th>
                 <Th className="text-center">Izin</Th>
                 <Th className="text-center">Sakit</Th>
                 <Th className="text-center">Cuti</Th>
@@ -115,6 +116,7 @@ export default function Laporan() {
                   <Td className="text-center">{r.summary.hariKerja}</Td>
                   <Td className="text-center text-emerald-700">{r.summary.tepatWaktu}</Td>
                   <Td className="text-center text-amber-700">{r.summary.terlambat}</Td>
+                  <Td className="text-center text-violet-700">{r.summary.absenSekali}</Td>
                   <Td className="text-center">{r.summary.izin}</Td>
                   <Td className="text-center">{r.summary.sakit}</Td>
                   <Td className="text-center">{r.summary.cuti}</Td>

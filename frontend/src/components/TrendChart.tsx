@@ -5,6 +5,7 @@ export interface TrendPoint {
   date: string;
   tepat: number;
   terlambat: number;
+  sekali: number; // hadir, absen tidak lengkap
   izin: number; // izin + sakit + cuti
   alfa: number;
 }
@@ -13,6 +14,7 @@ export interface TrendPoint {
 const SERIES = [
   { key: 'tepat', label: 'Tepat waktu', color: '#10b981' },
   { key: 'terlambat', label: 'Terlambat', color: '#f59e0b' },
+  { key: 'sekali', label: 'Absen sekali', color: '#8b5cf6' },
   { key: 'izin', label: 'Izin/Sakit/Cuti', color: '#0ea5e9' },
   { key: 'alfa', label: 'Alfa', color: '#f43f5e' },
 ] as const;
@@ -24,7 +26,7 @@ const PAD = { left: 32, right: 8, top: 12, bottom: 30 };
 /** Grafik batang bertumpuk kehadiran harian, dengan tooltip saat disentuh/hover. */
 export function TrendChart({ data }: { data: TrendPoint[] }) {
   const [hover, setHover] = useState<number | null>(null);
-  const totals = data.map((d) => d.tepat + d.terlambat + d.izin + d.alfa);
+  const totals = data.map((d) => d.tepat + d.terlambat + d.sekali + d.izin + d.alfa);
   const rawMax = Math.max(4, ...totals);
   const step = Math.ceil(rawMax / 4);
   const max = step * 4;

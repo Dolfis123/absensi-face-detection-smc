@@ -26,6 +26,7 @@ const STATUS: Record<DayStatus, { label: string; color: string }> = {
   LIBUR: { label: 'Libur', color: '#475569' },
   OFF: { label: 'Tidak dijadwalkan', color: '#94a3b8' },
   BELUM: { label: 'Belum absen', color: '#475569' },
+  ABSEN_SEKALI: { label: 'Absen sekali', color: '#c2410c' },
 };
 
 /** Catatan per hari untuk kolom Keterangan (dipakai PDF & CSV). */
@@ -166,13 +167,14 @@ export function sendAttendancePdf(res: Response, recap: EmployeeRecap[], meta: P
       for (const k of Object.keys(acc) as (keyof Summary)[]) acc[k] += r.summary[k];
       return acc;
     },
-    { hadir: 0, tepatWaktu: 0, terlambat: 0, izin: 0, sakit: 0, cuti: 0, alfa: 0, libur: 0, hariKerja: 0, istirahatLebih: 0, lupaKembali: 0 } as Summary,
+    { hadir: 0, tepatWaktu: 0, terlambat: 0, absenSekali: 0, izin: 0, sakit: 0, cuti: 0, alfa: 0, libur: 0, hariKerja: 0, istirahatLebih: 0, lupaKembali: 0 } as Summary,
   );
   const overall = pct(total);
   kpiRow(doc, [
     { label: 'Karyawan', value: String(recap.length) },
     { label: 'Tingkat kehadiran', value: overall === null ? '–' : `${overall}%`, color: overall !== null && overall < 90 ? C.amber : '#047857' },
     { label: 'Hadir / hari kerja', value: `${total.hadir} / ${total.hariKerja}` },
+    { label: 'Absen sekali', value: String(total.absenSekali), color: total.absenSekali ? C.amber : C.ink },
     { label: 'Terlambat', value: String(total.terlambat), color: total.terlambat ? C.amber : C.ink },
     { label: 'Alfa', value: String(total.alfa), color: total.alfa ? C.red : C.ink },
     { label: 'Izin / Sakit / Cuti', value: `${total.izin} / ${total.sakit} / ${total.cuti}` },
@@ -188,18 +190,19 @@ export function sendAttendancePdf(res: Response, recap: EmployeeRecap[], meta: P
     doc,
     [
       { label: 'No', width: 24, align: 'center' },
-      { label: 'Nama', width: 150 },
-      { label: 'NIK', width: 90 },
+      { label: 'Nama', width: 130 },
+      { label: 'NIK', width: 80 },
       { label: 'Hari kerja', width: 55, align: 'center' },
       { label: 'Hadir', width: 45, align: 'center' },
       { label: 'Tepat', width: 45, align: 'center' },
       { label: 'Terlambat', width: 55, align: 'center' },
+      { label: 'Sekali', width: 40, align: 'center' },
       { label: 'Izin', width: 35, align: 'center' },
       { label: 'Sakit', width: 35, align: 'center' },
       { label: 'Cuti', width: 35, align: 'center' },
       { label: 'Alfa', width: 35, align: 'center' },
       { label: 'Ist. lebih', width: 55, align: 'center' },
-      { label: 'Lupa kembali', width: 60, align: 'center' },
+      { label: 'Lupa kmbl', width: 50, align: 'center' },
       { label: 'Kehadiran', width: 51, align: 'center' },
     ],
     sorted.map((r, i) => {
@@ -213,6 +216,7 @@ export function sendAttendancePdf(res: Response, recap: EmployeeRecap[], meta: P
         String(s.hadir),
         String(s.tepatWaktu),
         num(s.terlambat, C.amber),
+        num(s.absenSekali, C.amber),
         String(s.izin),
         String(s.sakit),
         String(s.cuti),
@@ -251,7 +255,7 @@ export function sendAttendancePdf(res: Response, recap: EmployeeRecap[], meta: P
     sectionTitle(
       doc,
       `Rincian Harian · ${r.user.fullName}`,
-      `NIK ${r.user.nik} · Hari kerja ${s.hariKerja} · Hadir ${s.hadir} (tepat ${s.tepatWaktu}, terlambat ${s.terlambat}) · Alfa ${s.alfa} · Izin/Sakit/Cuti ${s.izin}/${s.sakit}/${s.cuti} · Istirahat lebih ${s.istirahatLebih} · Kehadiran ${p === null ? '–' : `${p}%`}`,
+      `NIK ${r.user.nik} · Hari kerja ${s.hariKerja} · Hadir ${s.hadir} (tepat ${s.tepatWaktu}, terlambat ${s.terlambat}, absen sekali ${s.absenSekali}) · Alfa ${s.alfa} · Izin/Sakit/Cuti ${s.izin}/${s.sakit}/${s.cuti} · Istirahat lebih ${s.istirahatLebih} · Kehadiran ${p === null ? '–' : `${p}%`}`,
     );
     if (days.length === 0) {
       doc.font('Helvetica').fontSize(9).fillColor(C.muted).text('Tidak ada jadwal kerja pada periode ini.');

@@ -24,7 +24,9 @@ export type DayStatus =
   | 'CUTI'
   | 'LIBUR'
   | 'OFF' // tidak dijadwalkan
-  | 'BELUM'; // jendela masuk belum lewat
+  | 'BELUM' // jendela masuk belum lewat
+  // Hadir tapi absennya tidak lengkap: hanya Masuk (tidak absen Pulang) atau tanpa absen Masuk
+  | 'ABSEN_SEKALI';
 
 export interface DayRecord {
   date: string;
@@ -47,9 +49,11 @@ export interface BreakInfo {
 }
 
 export interface Summary {
+  /** hadir = tepatWaktu + terlambat + absenSekali */
   hadir: number;
   tepatWaktu: number;
   terlambat: number;
+  absenSekali: number;
   izin: number;
   sakit: number;
   cuti: number;
@@ -70,6 +74,7 @@ const emptySummary = (): Summary => ({
   hadir: 0,
   tepatWaktu: 0,
   terlambat: 0,
+  absenSekali: 0,
   izin: 0,
   sakit: 0,
   cuti: 0,
@@ -80,11 +85,38 @@ const emptySummary = (): Summary => ({
   lupaKembali: 0,
 });
 
+/**
+ * Status hari kerja dari absen yang tercatat (hari yang dijadwalkan, bukan libur/izin).
+ * - Masuk + Pulang (atau Pulang belum ditutup) → Tepat Waktu / Terlambat sesuai Absen Masuk
+ * - Masuk tanpa Pulang setelah jendela Pulang tutup → Absen Sekali "Hanya absen masuk"
+ * - Tanpa Masuk tapi ada absen lain (mis. hanya Pulang) → Absen Sekali, bukan Alfa
+ * - Tidak ada absen sama sekali → Alfa (bila jendela Masuk sudah lewat) / Belum
+ */
+export function classifyAttendance(
+  atts: { slotType: SlotType; status: string }[],
+  masukClosed: boolean,
+  pulangClosed: boolean,
+): { status: DayStatus; note: string | null } {
+  const masuk = atts.find((a) => a.slotType === 'MASUK');
+  const pulang = atts.find((a) => a.slotType === 'PULANG');
+  if (masuk) {
+    if (!pulang && pulangClosed) {
+      return { status: 'ABSEN_SEKALI', note: masuk.status === 'TERLAMBAT' ? 'Hanya absen masuk (masuk terlambat)' : 'Hanya absen masuk' };
+    }
+    return { status: masuk.status === 'TERLAMBAT' ? 'TERLAMBAT' : 'TEPAT_WAKTU', note: null };
+  }
+  if (atts.length > 0) {
+    return { status: 'ABSEN_SEKALI', note: pulang && atts.length === 1 ? 'Hanya absen pulang' : 'Tidak absen masuk' };
+  }
+  return masukClosed ? { status: 'ALFA', note: null } : { status: 'BELUM', note: null };
+}
+
 const toMinutes = (hhmmss: string) => Number(hhmmss.slice(0, 2)) * 60 + Number(hhmmss.slice(3, 5));
 
 /**
  * Menyusun status kehadiran per hari. Prioritas: Libur → Izin/Sakit/Cuti (disetujui)
- * → tidak dijadwalkan → catatan Absen Masuk → Alfa / Belum.
+ * → tidak dijadwalkan → Masuk + Pulang lengkap (Tepat Waktu / Terlambat)
+ * → absen tidak lengkap (Absen Sekali) → Alfa / Belum.
  */
 export async function buildRecap(from: string, to: string, userIds?: number[]): Promise<EmployeeRecap[]> {
   const users = await User.findAll({
@@ -162,20 +194,21 @@ export async function buildRecap(from: string, to: string, userIds?: number[]): 
         if (base.break.over) summary.istirahatLebih++;
         if (base.break.missingReturn) summary.lupaKembali++;
       }
-      const masuk = atts.find((a) => a.slotType === 'MASUK');
-      if (masuk) {
-        summary.hadir++;
-        if (masuk.status === 'TERLAMBAT') summary.terlambat++;
-        else summary.tepatWaktu++;
-        return { ...base, status: masuk.status, note: null };
-      }
-      const masukSlot = shift.slots.find((s) => s.type === 'MASUK');
-      const closed = date < now.date || (date === now.date && masukSlot && now.minutes > slotDeadline(masukSlot));
-      if (closed) {
-        summary.alfa++;
-        return { ...base, status: 'ALFA', note: null };
-      }
-      return { ...base, status: 'BELUM', note: null };
+      const closedBy = (type: 'MASUK' | 'PULANG') => {
+        const slot = shift.slots.find((s) => s.type === type);
+        return !!slot && (date < now.date || (date === now.date && now.minutes > slotDeadline(slot)));
+      };
+      const result = classifyAttendance(
+        atts.map((a) => ({ slotType: a.slotType, status: a.status })),
+        closedBy('MASUK'),
+        closedBy('PULANG'),
+      );
+      if (result.status === 'TEPAT_WAKTU' || result.status === 'TERLAMBAT' || result.status === 'ABSEN_SEKALI') summary.hadir++;
+      if (result.status === 'TEPAT_WAKTU') summary.tepatWaktu++;
+      if (result.status === 'TERLAMBAT') summary.terlambat++;
+      if (result.status === 'ABSEN_SEKALI') summary.absenSekali++;
+      if (result.status === 'ALFA') summary.alfa++;
+      return { ...base, ...result };
     });
 
     return {
