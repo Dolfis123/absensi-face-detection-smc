@@ -39,6 +39,7 @@ const createUserSchema = z.object({
   nik: z.string().trim().min(3).max(40),
   username: z.string().trim().min(4).max(50).regex(/^[a-zA-Z0-9._]+$/, 'Username hanya huruf, angka, titik, underscore'),
   password: z.string().min(8, 'Password minimal 8 karakter').max(100),
+  passwordConfirm: z.string().max(100),
   role: assignableRole,
   phone,
   defaultShiftId: z.number().int().positive(),
@@ -91,6 +92,10 @@ async function applySimilarOverride(
   }
 }
 
+function assertPasswordConfirmed(password: string, confirm: string | undefined) {
+  if (password !== confirm) throw new HttpError(400, 'Konfirmasi password tidak sama dengan password');
+}
+
 async function loadEditableUser(id: number) {
   const user = await User.findByPk(id);
   if (!user) throw new HttpError(404, 'Pengguna tidak ditemukan');
@@ -114,6 +119,7 @@ router.post(
   '/users',
   ah(async (req, res) => {
     const body = createUserSchema.parse(req.body);
+    assertPasswordConfirmed(body.password, body.passwordConfirm);
     await assertShift(body.defaultShiftId);
     if (body.role === 'KARYAWAN' && !body.faceImages) {
       throw new HttpError(400, 'Data wajah wajib diambil untuk Karyawan Parkir');
@@ -153,8 +159,13 @@ router.put(
   ah(async (req, res) => {
     const body = createUserSchema
       .omit({ faceImages: true, similarOverride: true })
-      .extend({ password: z.string().min(8).max(100).optional().or(z.literal('')), isActive: z.boolean() })
+      .extend({
+        password: z.string().min(8, 'Password minimal 8 karakter').max(100).optional().or(z.literal('')),
+        passwordConfirm: z.string().max(100).optional(),
+        isActive: z.boolean(),
+      })
       .parse(req.body);
+    if (body.password) assertPasswordConfirmed(body.password, body.passwordConfirm);
     const user = await loadEditableUser(Number(req.params.id));
     await assertShift(body.defaultShiftId);
     if (body.role === 'KARYAWAN' && !user.faceEmbedding) {

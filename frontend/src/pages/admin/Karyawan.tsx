@@ -12,6 +12,7 @@ type FormState = {
   nik: string;
   username: string;
   password: string;
+  passwordConfirm: string;
   role: 'KARYAWAN' | 'KOORDINATOR';
   phone: string;
   defaultShiftId: number;
@@ -23,6 +24,7 @@ const blank = (shiftId: number): FormState => ({
   nik: '',
   username: '',
   password: '',
+  passwordConfirm: '',
   role: 'KARYAWAN',
   phone: '',
   defaultShiftId: shiftId,
@@ -185,6 +187,7 @@ export default function Karyawan() {
   const [similar, setSimilar] = useState<SimilarFaceInfo[] | null>(null);
   const [override, setOverride] = useState<OverrideState>(blankOverride);
   const [pinValue, setPinValue] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [q, setQ] = useState('');
   const { toast, confirm } = useFeedback();
 
@@ -212,6 +215,7 @@ export default function Karyawan() {
         nik: u.nik,
         username: u.username,
         password: '',
+        passwordConfirm: '',
         role: u.role as FormState['role'],
         phone: u.phone,
         defaultShiftId: u.defaultShiftId ?? shifts[0]?.id ?? 1,
@@ -234,6 +238,10 @@ export default function Karyawan() {
         setMode(null);
         reload();
         return;
+      }
+      if (mode.type === 'create' || (mode.type === 'edit' && form.password)) {
+        if (form.password.length < 8) throw new Error('Password minimal 8 karakter');
+        if (form.password !== form.passwordConfirm) throw new Error('Konfirmasi password tidak sama dengan password');
       }
       const needsFace = mode.type === 'face' || (mode.type === 'create' && form.role === 'KARYAWAN');
       if (needsFace && face.length < MIN_FACE_PHOTOS) throw new Error(`Ambil minimal ${MIN_FACE_PHOTOS} foto wajah terlebih dahulu`);
@@ -473,13 +481,13 @@ export default function Karyawan() {
                   <Input type="tel" value={form.phone} onChange={(e) => set('phone', e.target.value)} placeholder="08xxxxxxxxxx" required />
                 </Field>
               </div>
+              <Field label="Username">
+                <Input value={form.username} autoComplete="off" onChange={(e) => set('username', e.target.value)} required />
+              </Field>
               <div className="grid grid-cols-2 gap-2">
-                <Field label="Username">
-                  <Input value={form.username} autoComplete="off" onChange={(e) => set('username', e.target.value)} required />
-                </Field>
                 <Field label="Password" hint={mode?.type === 'edit' ? 'Kosongkan jika tidak diubah' : 'Minimal 8 karakter'}>
                   <Input
-                    type="password"
+                    type={showPassword ? 'text' : 'password'}
                     autoComplete="new-password"
                     value={form.password}
                     onChange={(e) => set('password', e.target.value)}
@@ -487,6 +495,30 @@ export default function Karyawan() {
                     minLength={8}
                   />
                 </Field>
+                <Field label="Konfirmasi Password" hint="Ketik ulang password yang sama">
+                  <Input
+                    type={showPassword ? 'text' : 'password'}
+                    autoComplete="new-password"
+                    value={form.passwordConfirm}
+                    onChange={(e) => set('passwordConfirm', e.target.value)}
+                    required={mode?.type === 'create' || !!form.password}
+                    className={
+                      form.passwordConfirm && form.passwordConfirm !== form.password ? '!ring-2 !ring-rose-400' : undefined
+                    }
+                  />
+                </Field>
+              </div>
+              <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                <label className="flex cursor-pointer items-center gap-1.5 text-slate-600">
+                  <input type="checkbox" checked={showPassword} onChange={(e) => setShowPassword(e.target.checked)} />
+                  Tampilkan password
+                </label>
+                {form.passwordConfirm &&
+                  (form.passwordConfirm === form.password ? (
+                    <span className="font-medium text-emerald-600">✓ Password cocok</span>
+                  ) : (
+                    <span className="font-medium text-rose-600">✕ Password tidak sama</span>
+                  ))}
               </div>
               <Field label="Shift Kerja Default Awal" hint="Acuan awal sebelum diatur di roster dinamis">
                 <Select value={form.defaultShiftId} onChange={(e) => set('defaultShiftId', Number(e.target.value))}>
