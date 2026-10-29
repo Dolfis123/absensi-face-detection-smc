@@ -11,6 +11,8 @@ if [[ "${SMC_UPDATE_PULLED:-}" != 1 ]]; then
   step "Ambil kode terbaru"
   # chmod +x dari setup-server.sh jangan dianggap "perubahan lokal" yang memblokir git pull
   git config core.fileMode false
+  # File cache build (tsbuildinfo) ikut berubah saat build di server; buang dulu supaya pull tidak tertahan
+  git checkout -- frontend/tsconfig.tsbuildinfo 2>/dev/null || true
   git pull --ff-only
   # Jalankan ulang versi update.sh yang BARU saja ditarik, karena langkah update bisa berubah antar versi
   SMC_UPDATE_PULLED=1 exec bash "$APP_DIR/deploy/update.sh"

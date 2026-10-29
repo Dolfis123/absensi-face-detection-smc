@@ -8,3 +8,6 @@ __pycache__/
 
 # Model wajah (diunduh lewat face-service/download_models.py)
 face-service/models/
+
+# File cache hasil build TypeScript (dibuat ulang setiap build)
+*.tsbuildinfo
