@@ -31,11 +31,29 @@ interface Preview {
   dates: string[];
   holidays: { date: string; name: string }[];
   rows: { userId: number; fullName: string; role: Role; cells: Cell[] }[];
-  stats: { userId: number; name: string; shift1: number; shift2: number; fixed: number; off: number; weekendOff: number; shortRest: number }[];
+  stats: {
+    userId: number;
+    name: string;
+    shift1: number;
+    shift2: number;
+    fixed: number;
+    off: number;
+    weekendOff: number;
+    shortRest: number;
+    offByWeekday: number[];
+    maxSameMate: number;
+  }[];
   daily: { date: string; shift1: number; shift2: number; fixed: number; off: number }[];
   warnings: string[];
   existingSchedules: number;
 }
+
+/**
+ * 7 minggu = periode terpendek yang paling rata untuk 1 hari Off per minggu: setiap orang mendapat 7 hari Off
+ * sehingga Off-nya bisa bergilir ke semua hari Senin–Minggu, Off Sabtu/Minggu sama banyak, dan jumlah
+ * Shift 1 / Shift 2 antar karyawan selisih paling banyak 1 hari.
+ */
+const RECOMMENDED_WEEKS = 7;
 
 // Urutan Senin → Minggu (angka hari: 0 = Minggu)
 const WEEK = [1, 2, 3, 4, 5, 6, 0];
@@ -71,7 +89,7 @@ export default function RosterOtomatis() {
 
   const nextMonday = mondayOf(today) === today ? today : addDays(mondayOf(today), 7);
   const [start, setStart] = useState(nextMonday);
-  const [weeks, setWeeks] = useState(4);
+  const [weeks, setWeeks] = useState(RECOMMENDED_WEEKS);
   const [shift2Extra, setShift2Extra] = useState(1);
   const [preview, setPreview] = useState<Preview | null>(null);
   const [generating, setGenerating] = useState(false);
@@ -168,7 +186,7 @@ export default function RosterOtomatis() {
     <>
       <PageHeader
         title="Roster Otomatis"
-        subtitle="Buat roster 4–7 minggu sekaligus. Shift 1, Shift 2, dan hari Off dibagi rata sesuai aturan tiap karyawan."
+        subtitle="Buat roster beberapa minggu sekaligus (disarankan 7 minggu). Shift 1, Shift 2, dan hari Off dibagi rata sesuai aturan tiap karyawan."
         actions={
           <Link to="/app/roster">
             <Button variant="secondary" icon="calendar">
@@ -203,6 +221,7 @@ export default function RosterOtomatis() {
                       {r.role === 'KOORDINATOR' ? 'Koordinator' : r.nik}
                       {!r.active && ' · tidak ikut roster otomatis'}
                     </div>
+                    {!r.saved && <Badge className="mt-1 bg-amber-100 text-amber-800">Aturan bawaan (belum diatur)</Badge>}
                   </Td>
                   <Td className="text-sm">{shiftName(r.fixedShiftId)}</Td>
                   <Td className="text-sm">{daysText(r.offDays)}</Td>
@@ -233,22 +252,14 @@ export default function RosterOtomatis() {
                 className="block w-full rounded-lg border-slate-300 text-sm shadow-sm focus:border-brand-500 focus:ring-brand-500"
               />
             </Field>
-            <Field label="Lama periode">
-              <div className="flex gap-2">
-                {[4, 5, 6, 7].map((w) => (
-                  <button
-                    key={w}
-                    type="button"
-                    onClick={() => setWeeks(w)}
-                    className={cx(
-                      'flex-1 rounded-lg py-2 text-sm font-semibold ring-1',
-                      weeks === w ? 'bg-brand-600 text-white ring-brand-600' : 'bg-white text-slate-600 ring-slate-200 hover:ring-slate-300',
-                    )}
-                  >
-                    {w} minggu
-                  </button>
+            <Field label="Lama periode" hint="7 minggu: setiap orang Off bergilir di semua hari Senin–Minggu dan pembagian shift paling rata">
+              <Select value={weeks} onChange={(e) => setWeeks(Number(e.target.value))}>
+                {Array.from({ length: 11 }, (_, i) => i + 3).map((w) => (
+                  <option key={w} value={w}>
+                    {w} minggu{w === RECOMMENDED_WEEKS ? ' — disarankan (paling rata)' : ''}
+                  </option>
                 ))}
-              </div>
+              </Select>
             </Field>
             <Field label="Shift 2 lebih banyak dari Shift 1" hint="Selisih minimal jumlah orang Shift 2 dibanding Shift 1 setiap hari">
               <Select value={shift2Extra} onChange={(e) => setShift2Extra(Number(e.target.value))}>
@@ -288,6 +299,28 @@ export default function RosterOtomatis() {
               </div>
             }
           >
+            <div className="mb-3">
+              <Alert kind="success">
+                Semua aturan karyawan terpenuhi (sudah dicek sistem per tanggal):
+                <ul className="mt-1 list-disc pl-4">
+                  {data.rules
+                    .filter((r) => r.active && (r.fixedShiftId !== null || r.offDays.length < 7 || r.noShift1Days.length || r.noShift2Days.length))
+                    .map((r) => (
+                      <li key={r.userId}>
+                        <b>{r.fullName}</b>:{' '}
+                        {[
+                          r.fixedShiftId !== null && `selalu ${shiftName(r.fixedShiftId)}`,
+                          r.offDays.length < 7 && `Off hanya ${daysText(r.offDays)}`,
+                          r.noShift1Days.length > 0 && `${daysText(r.noShift1Days)} tidak Shift 1`,
+                          r.noShift2Days.length > 0 && `${daysText(r.noShift2Days)} tidak Shift 2`,
+                        ]
+                          .filter(Boolean)
+                          .join(' · ')}
+                      </li>
+                    ))}
+                </ul>
+              </Alert>
+            </div>
             {preview.warnings.length > 0 && (
               <div className="mb-3">
                 <Alert kind="info">
@@ -353,6 +386,8 @@ export default function RosterOtomatis() {
                   <Th className="text-center">Shift Penuh</Th>
                   <Th className="text-center">Off</Th>
                   <Th className="text-center">Off Sabtu/Minggu</Th>
+                  <Th>Hari Off</Th>
+                  <Th className="text-center">Off bareng orang yang sama</Th>
                   <Th className="text-center">Pulang malam → masuk pagi</Th>
                 </tr>
               </thead>
@@ -365,6 +400,15 @@ export default function RosterOtomatis() {
                     <Td className="text-center">{s.fixed || '—'}</Td>
                     <Td className="text-center">{s.off}</Td>
                     <Td className="text-center">{s.weekendOff}</Td>
+                    <Td className="whitespace-nowrap text-xs">
+                      {WEEK.filter((d) => s.offByWeekday[d]).map((d) => (
+                        <span key={d} className={cx('mr-1', s.offByWeekday[d] > 1 && 'font-semibold text-amber-700')}>
+                          {DAY_SHORT[d]}
+                          {s.offByWeekday[d] > 1 && `×${s.offByWeekday[d]}`}
+                        </span>
+                      ))}
+                    </Td>
+                    <Td className="text-center">{s.maxSameMate > 0 ? `maks ${s.maxSameMate}×` : '—'}</Td>
                     <Td className="text-center">{s.shortRest > 0 ? <Badge className="bg-amber-100 text-amber-800">{s.shortRest}×</Badge> : '—'}</Td>
                   </tr>
                 ))}

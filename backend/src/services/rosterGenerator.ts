@@ -43,6 +43,10 @@ export interface GenStats {
   weekendOff: number;
   /** Shift 2 (pulang 23:00) lalu Shift 1 besok paginya */
   shortRest: number;
+  /** Jumlah Off per hari (indeks 0 = Minggu … 6 = Sabtu) */
+  offByWeekday: number[];
+  /** Paling sering Off bersamaan dengan orang yang sama */
+  maxSameMate: number;
 }
 
 export interface GenResult {
@@ -51,6 +55,8 @@ export interface GenResult {
   stats: GenStats[];
   daily: { date: string; shift1: number; shift2: number; fixed: number; off: number }[];
   warnings: string[];
+  /** Pelanggaran aturan karyawan. Harus kosong; roster yang melanggar tidak dipakai. */
+  violations: string[];
 }
 
 const weekday = (date: string) => new Date(`${date}T00:00:00Z`).getUTCDay();
@@ -62,18 +68,22 @@ export function generateRoster(employees: GenEmployee[], opt: GenOptions): GenRe
   const warnings: string[] = [];
   const cells = new Map<number, Map<string, GenCell>>(employees.map((e) => [e.id, new Map()]));
   const stats = new Map<number, GenStats>(
-    employees.map((e) => [e.id, { userId: e.id, name: e.name, shift1: 0, shift2: 0, fixed: 0, off: 0, weekendOff: 0, shortRest: 0 }]),
+    employees.map((e) => [e.id, { userId: e.id, name: e.name, shift1: 0, shift2: 0, fixed: 0, off: 0, weekendOff: 0, shortRest: 0, offByWeekday: [], maxSameMate: 0 }]),
   );
-  const lastOffWeekday = new Map<number, number>();
   const seed = opt.seed ?? 0;
+  // Riwayat Off: berapa kali tiap orang Off di tiap hari, dan berapa kali dua orang Off bersamaan
+  const offByWeekday = new Map<number, number[]>(employees.map((e) => [e.id, [0, 0, 0, 0, 0, 0, 0]]));
+  const together = new Map<string, number>();
+  const pairKey = (a: number, b: number) => (a < b ? `${a}|${b}` : `${b}|${a}`);
+  const jitter = (id: number, w: number) => ((id * 7919 + w * 104729 + seed * 15485863) % 997) / 997;
 
-  // ── 1) Hari Off per minggu: diratakan antar-hari dan antar-karyawan ──
+  // ── 1) Hari Off per minggu: hari Off tiap orang bergeser, dan pasangan Off-nya berganti-ganti ──
   for (let w = 0; w < opt.weeks; w++) {
     const weekDates = dates.slice(w * 7, w * 7 + 7).filter((d) => !opt.holidays.has(d));
-    const offCount = new Map<string, number>(weekDates.map((d) => [d, 0]));
-    // Karyawan dengan pilihan hari Off paling sedikit dipilihkan lebih dulu
-    const order = [...employees].sort((a, b) => a.offDays.length - b.offDays.length || a.id - b.id);
-    for (const [idx, e] of order.entries()) {
+    const offOn = new Map<string, number[]>(weekDates.map((d) => [d, []]));
+    // Yang pilihan hari Off-nya paling sedikit dipilihkan lebih dulu; sisanya diacak tiap minggu
+    const order = [...employees].sort((a, b) => a.offDays.length - b.offDays.length || jitter(a.id, w) - jitter(b.id, w));
+    for (const e of order) {
       for (let k = 0; k < opt.offPerWeek; k++) {
         const options = weekDates.filter((d) => e.offDays.includes(weekday(d)) && cells.get(e.id)!.get(d) !== 'OFF');
         if (options.length === 0) {
@@ -81,23 +91,26 @@ export function generateRoster(employees: GenEmployee[], opt: GenOptions): GenRe
           break;
         }
         const s = stats.get(e.id)!;
-        // Geser hari Off tiap minggu supaya tidak selalu hari yang sama, dan bagi jatah Off akhir pekan
-        const preferred = (idx * (1 + seed % 5) + w * 3 + seed) % 7;
+        const hist = offByWeekday.get(e.id)!;
         const score = (d: string) => {
           const wd = weekday(d);
+          const mates = offOn.get(d)!;
           return (
-            offCount.get(d)! * 10 +
-            (isWeekend(wd) ? s.weekendOff * 4 : 0) +
-            (lastOffWeekday.get(e.id) === wd ? 3 : 0) +
-            ((wd - preferred + 7) % 7) / 10
+            mates.length * 20 + // jumlah orang Off per hari tetap rata
+            hist[wd] * 25 + // hari Off berpindah-pindah, tidak di hari yang sama terus
+            mates.reduce((sum, m) => sum + (together.get(pairKey(e.id, m)) ?? 0), 0) * 6 + // ganti pasangan Off
+            (isWeekend(wd) ? s.weekendOff * 16 : 0) + // Off Sabtu/Minggu bergiliran
+            jitter(e.id * 31 + wd, w)
           );
         };
-        const best = options.reduce((a, b) => (score(b) < score(a) ? b : a));
+        const best = options.reduce((x, y) => (score(y) < score(x) ? y : x));
+        const wd = weekday(best);
+        for (const m of offOn.get(best)!) together.set(pairKey(e.id, m), (together.get(pairKey(e.id, m)) ?? 0) + 1);
+        offOn.get(best)!.push(e.id);
         cells.get(e.id)!.set(best, 'OFF');
-        offCount.set(best, offCount.get(best)! + 1);
-        lastOffWeekday.set(e.id, weekday(best));
+        hist[wd]++;
         s.off++;
-        if (isWeekend(weekday(best))) s.weekendOff++;
+        if (isWeekend(wd)) s.weekendOff++;
       }
     }
   }
@@ -138,7 +151,7 @@ export function generateRoster(employees: GenEmployee[], opt: GenOptions): GenRe
       // Besok wajib Shift 1 (mis. ada kuliah malam) → hari ini Shift 1 juga supaya tidak pulang 23:00 lalu masuk 08:00
       const forcedS1Tomorrow =
         dates.includes(tomorrow) && cells.get(e.id)!.get(tomorrow) !== 'OFF' && e.noShift2Days.includes(twd) && !e.noShift1Days.includes(twd);
-      return (p === opt.shift2Id ? 100 : 0) - (p === opt.shift1Id ? 2 : 0) - (forcedS1Tomorrow ? 60 : 0) + 4 * surplus + (((e.id * 7919 + seed * 104729) % 1000) / 1e5);
+      return (p === opt.shift2Id ? 100 : 0) - (p === opt.shift1Id ? 2 : 0) - (forcedS1Tomorrow ? 60 : 0) + 8 * surplus + (((e.id * 7919 + seed * 104729) % 1000) / 1e5);
     };
     const chosenS1 = new Set([...free].sort((a, b) => s1Score(a) - s1Score(b)).slice(0, needS1).map((e) => e.id));
 
@@ -165,22 +178,99 @@ export function generateRoster(employees: GenEmployee[], opt: GenOptions): GenRe
     }
   }
 
-  return { dates, cells, stats: [...stats.values()], daily, warnings: [...new Set(warnings)] };
+  // ── 3) Penyeimbangan akhir: tukar Shift 1 ⇄ Shift 2 antar dua orang di hari yang sama ──
+  balanceShifts(employees, dates, cells, stats, opt);
+
+  for (const e of employees) {
+    const s = stats.get(e.id)!;
+    s.offByWeekday = offByWeekday.get(e.id)!;
+    s.maxSameMate = Math.max(0, ...employees.filter((m) => m.id !== e.id).map((m) => together.get(pairKey(e.id, m.id)) ?? 0));
+  }
+  const result: GenResult = { dates, cells, stats: [...stats.values()], daily, warnings: [...new Set(warnings)], violations: [] };
+  result.violations = checkRules(result, employees, opt);
+  return result;
+}
+
+/**
+ * Menukar Shift 1 milik orang yang kelebihan dengan Shift 2 milik orang yang kekurangan pada hari yang sama,
+ * selama tidak melanggar aturan dan tidak menimbulkan "pulang 23:00 lalu masuk 08:00". Jumlah orang per shift
+ * setiap hari tidak berubah. Hanya antar-karyawan yang sebanding (digilir, batasan maks. 1 hari per minggu).
+ */
+function balanceShifts(employees: GenEmployee[], dates: string[], cells: GenResult['cells'], stats: Map<number, GenStats>, opt: GenOptions) {
+  const group = employees.filter((e) => e.fixedShiftId === null && e.noShift1Days.length + e.noShift2Days.length <= 1);
+  const at = (e: GenEmployee, i: number) => (i < 0 || i >= dates.length ? undefined : cells.get(e.id)!.get(dates[i]));
+  const canS1 = (e: GenEmployee, i: number) => !e.noShift1Days.includes(weekday(dates[i])) && at(e, i - 1) !== opt.shift2Id;
+  const canS2 = (e: GenEmployee, i: number) => !e.noShift2Days.includes(weekday(dates[i])) && at(e, i + 1) !== opt.shift1Id;
+  for (let guard = 0; guard < 500; guard++) {
+    const sorted = [...group].sort((a, b) => stats.get(b.id)!.shift1 - stats.get(a.id)!.shift1);
+    let swapped = false;
+    outer: for (const hi of sorted) {
+      for (const lo of [...sorted].reverse()) {
+        if (stats.get(hi.id)!.shift1 - stats.get(lo.id)!.shift1 < 2) break;
+        for (let i = 0; i < dates.length; i++) {
+          if (at(hi, i) === opt.shift1Id && at(lo, i) === opt.shift2Id && canS1(lo, i) && canS2(hi, i)) {
+            cells.get(hi.id)!.set(dates[i], opt.shift2Id);
+            cells.get(lo.id)!.set(dates[i], opt.shift1Id);
+            stats.get(hi.id)!.shift1--;
+            stats.get(hi.id)!.shift2++;
+            stats.get(lo.id)!.shift1++;
+            stats.get(lo.id)!.shift2--;
+            swapped = true;
+            break outer;
+          }
+        }
+      }
+    }
+    if (!swapped) break;
+  }
+  // Hitung ulang "pulang malam lalu masuk pagi" setelah penukaran
+  for (const e of employees) {
+    const s = stats.get(e.id)!;
+    s.shortRest = 0;
+    for (let i = 1; i < dates.length; i++) if (at(e, i - 1) === opt.shift2Id && at(e, i) === opt.shift1Id) s.shortRest++;
+  }
+}
+
+/** Cek ulang setiap sel terhadap aturan karyawan (pengaman terakhir sebelum roster ditampilkan/disimpan). */
+export function checkRules(r: GenResult, employees: GenEmployee[], opt: Pick<GenOptions, 'shift1Id' | 'shift2Id' | 'holidays'>): string[] {
+  const out: string[] = [];
+  for (const e of employees) {
+    const row = r.cells.get(e.id)!;
+    for (const date of r.dates) {
+      if (opt.holidays.has(date)) continue;
+      const c = row.get(date);
+      const wd = weekday(date);
+      const where = `${e.name}, ${DAY_NAME[wd]} ${date}`;
+      if (c === undefined) out.push(`${where}: belum dijadwalkan`);
+      else if (c === 'OFF') {
+        if (!e.offDays.includes(wd)) out.push(`${where}: Off padahal hanya boleh Off hari ${e.offDays.map((d) => DAY_NAME[d]).join('/')}`);
+      } else if (e.fixedShiftId !== null) {
+        if (c !== e.fixedShiftId) out.push(`${where}: seharusnya selalu shift tetapnya`);
+      } else if (c === opt.shift1Id && e.noShift1Days.includes(wd)) out.push(`${where}: tidak boleh Shift 1`);
+      else if (c === opt.shift2Id && e.noShift2Days.includes(wd)) out.push(`${where}: tidak boleh Shift 2`);
+    }
+  }
+  return out;
 }
 
 /** Biaya ketidakrataan: selisih jatah Shift 1, Off akhir pekan, dan jumlah Shift 2 → Shift 1. */
 function unfairness(r: GenResult, employees: GenEmployee[]): number {
   const flexible = r.stats.filter((s) => {
     const e = employees.find((x) => x.id === s.userId)!;
-    return e.fixedShiftId === null && e.noShift1Days.length === 0 && e.noShift2Days.length === 0;
+    // Yang hanya dibatasi 1 hari per minggu tetap harus setara dengan yang lain
+    return e.fixedShiftId === null && e.noShift1Days.length + e.noShift2Days.length <= 1;
   });
   const spread = (xs: number[]) => (xs.length ? Math.max(...xs) - Math.min(...xs) : 0);
   const pool = flexible.length ? flexible : r.stats;
+  const rotating = r.stats.filter((s) => employees.find((x) => x.id === s.userId)!.offDays.length > 1);
   return (
     spread(pool.map((s) => s.shift1)) * 10 +
-    spread(r.stats.filter((s) => s.off > 0).map((s) => s.weekendOff)) * 6 +
+    spread(rotating.map((s) => s.weekendOff)) * 10 +
     r.stats.reduce((a, s) => a + s.shortRest, 0) * 3 +
-    r.warnings.length * 50
+    r.warnings.length * 50 +
+    r.violations.length * 10_000 +
+    rotating.reduce((a, s) => a + Math.max(...s.offByWeekday) - 1, 0) * 4 +
+    rotating.reduce((a, s) => a + Math.max(0, s.maxSameMate - 1), 0) * 3
   );
 }
 

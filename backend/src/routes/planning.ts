@@ -275,7 +275,7 @@ router.post(
     const body = z
       .object({
         start: z.string().regex(DATE_RE),
-        weeks: z.number().int().min(4).max(7),
+        weeks: z.number().int().min(3).max(13),
         offPerWeek: z.number().int().min(1).max(2).default(1),
         shift2Extra: z.number().int().min(0).max(5).default(1),
       })
@@ -305,6 +305,9 @@ router.post(
       holidays: new Set(holidays.map((h) => h.date)),
       prevDay: new Map(prevRows.map((s) => [s.userId, s.shiftId === null ? ('OFF' as const) : s.shiftId])),
     });
+    if (result.violations.length > 0) {
+      throw new HttpError(400, `Aturan karyawan tidak bisa dipenuhi semua: ${result.violations.slice(0, 5).join('; ')}`);
+    }
     res.json({
       start: body.start,
       end,

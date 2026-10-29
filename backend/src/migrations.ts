@@ -1,5 +1,5 @@
-import { QueryTypes } from 'sequelize';
-import { AppSetting, Shift, ShiftBreak, ShiftSlot, sequelize } from './models';
+import { Op, QueryTypes } from 'sequelize';
+import { AppSetting, RosterRule, Shift, ShiftBreak, ShiftSlot, User, sequelize } from './models';
 import { hhmmToMinutes, minutesToHhmm, witNow } from './utils/time';
 
 /**
@@ -80,6 +80,30 @@ const MIGRATIONS: { id: string; up: () => Promise<void> }[] = [
       );
       if (rows[0] && rows[0].IS_NULLABLE === 'NO') {
         await sequelize.query(`ALTER TABLE \`employee_schedules\` MODIFY \`shift_id\` ${rows[0].COLUMN_TYPE} NULL`);
+      }
+    },
+  },  {
+    id: '2026-10-30-aturan-roster-smc',
+    async up() {
+      // Aturan roster yang sudah disepakati untuk Pos Parkir Mal SMC. Hanya diisi bila aturan orang itu
+      // belum pernah diubah (masih bawaan), supaya isian manual dari layar Aturan Karyawan tidak tertimpa.
+      const full = await Shift.findOne({ where: { code: 'SHIFT_PENUH' } });
+      const ALL = [0, 1, 2, 3, 4, 5, 6];
+      const presets: { name: string; rule: { fixedShiftId: number | null; offDays: number[]; noShift1Days: number[]; noShift2Days: number[] } }[] = [
+        { name: 'Nikson%', rule: { fixedShiftId: full?.id ?? null, offDays: [1], noShift1Days: [], noShift2Days: [] } },
+        { name: 'Apriando%', rule: { fixedShiftId: null, offDays: ALL, noShift1Days: [], noShift2Days: [1, 2, 3, 5] } },
+        { name: 'Mesak%', rule: { fixedShiftId: null, offDays: ALL, noShift1Days: [0], noShift2Days: [] } },
+        { name: 'Luis%', rule: { fixedShiftId: null, offDays: ALL, noShift1Days: [0], noShift2Days: [] } },
+      ];
+      const days = (v: unknown) => (typeof v === 'string' ? (JSON.parse(v) as number[]) : ((v as number[]) ?? []));
+      for (const p of presets) {
+        const users = await User.findAll({ where: { fullName: { [Op.like]: p.name }, role: ['KARYAWAN', 'KOORDINATOR'] } });
+        if (users.length !== 1) continue; // nama tidak ditemukan / ganda → biarkan diatur manual
+        const existing = await RosterRule.findByPk(users[0].id);
+        const untouched =
+          !existing ||
+          (days(existing.offDays).length === 7 && days(existing.noShift1Days).length === 0 && days(existing.noShift2Days).length === 0);
+        if (untouched) await RosterRule.upsert({ userId: users[0].id, ...p.rule, active: existing?.active ?? true });
       }
     },
   },
