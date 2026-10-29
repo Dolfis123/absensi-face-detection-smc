@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useLoad } from '../../components/attendance';
-import { Alert, Button, Card, Loading, PageHeader } from '../../components/ui';
+import { RosterDownloadButtons } from '../../components/RosterDownload';
+import { Alert, Button, Card, Field, Loading, PageHeader, Select } from '../../components/ui';
 import { api, errMsg, Holiday, Role, Shift } from '../../lib/api';
-import { addDays, mondayOf, shortDay, todayWIT } from '../../lib/format';
+import { addDays, fmtDate, mondayOf, shortDay, todayWIT } from '../../lib/format';
 
 interface RosterResponse {
   employees: { id: number; fullName: string; nik: string; role: Role; defaultShiftId: number | null }[];
@@ -37,6 +38,7 @@ export default function Roster() {
   const [draft, setDraft] = useState<Map<string, Cell>>(new Map());
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<{ kind: 'error' | 'success'; text: string } | null>(null);
+  const [dlWeeks, setDlWeeks] = useState(1);
 
   const toCell = (shiftId: number | null): Cell => (shiftId === null ? 'OFF' : shiftId);
 
@@ -192,6 +194,29 @@ export default function Roster() {
             Simpan {changes.length > 0 && `(${changes.length})`}
           </Button>
         </div>
+      </Card>
+
+      <Card
+        className="mt-4"
+        title="Unduh Roster"
+        subtitle="Untuk dibagikan ke grup WhatsApp. Berisi jadwal per minggu, jumlah orang per hari, keterangan simbol, dan rekap per karyawan."
+      >
+        <div className="flex flex-wrap items-end gap-3">
+          <Field label="Mulai">
+            <div className="py-2 text-sm font-medium">{fmtDate(weekStart)}</div>
+          </Field>
+          <Field label="Lama">
+            <Select value={dlWeeks} onChange={(e) => setDlWeeks(Number(e.target.value))}>
+              {Array.from({ length: 14 }, (_, i) => i + 1).map((w) => (
+                <option key={w} value={w}>
+                  {w} minggu (s.d. {fmtDate(addDays(weekStart, w * 7 - 1), false)})
+                </option>
+              ))}
+            </Select>
+          </Field>
+          <RosterDownloadButtons from={weekStart} to={addDays(weekStart, dlWeeks * 7 - 1)} />
+        </div>
+        {changes.length > 0 && <p className="mt-2 text-xs text-amber-700">Ada perubahan yang belum disimpan. File unduhan hanya berisi roster yang sudah disimpan.</p>}
       </Card>
     </>
   );

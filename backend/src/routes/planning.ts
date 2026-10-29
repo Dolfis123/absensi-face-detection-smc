@@ -3,6 +3,7 @@ import { Op } from 'sequelize';
 import { z } from 'zod';
 import { currentUser, requireRole } from '../middleware/auth';
 import { ATTENDEE_ROLES, EmployeeSchedule, Holiday, RosterRule, SLOT_TYPES, Shift, ShiftBreak, ShiftChangeLog, User, sequelize } from '../models';
+import { loadRosterData, sendRosterPdf, sendRosterXlsx } from '../services/rosterExport';
 import { GenEmployee, generateBestRoster } from '../services/rosterGenerator';
 import { getLateTolerance, saveLateTolerance } from '../services/settings';
 import { BreakInput, loadShifts, SlotInput, validateShiftTimes } from '../services/shiftService';
@@ -324,6 +325,27 @@ router.post(
       warnings: result.warnings,
       existingSchedules: existing,
     });
+  }),
+);
+
+/** Unduh roster yang sudah tersimpan (PDF / Excel) untuk dibagikan ke grup WhatsApp. */
+const exportQuery = z
+  .object({ from: z.string().regex(DATE_RE), to: z.string().regex(DATE_RE) })
+  .refine((v) => v.from <= v.to && eachDate(v.from, v.to).length <= 98, { message: 'Rentang unduhan maksimal 14 minggu' });
+
+router.get(
+  '/roster/export.pdf',
+  ah(async (req, res) => {
+    const { from, to } = exportQuery.parse(req.query);
+    sendRosterPdf(res, await loadRosterData(from, to), currentUser(req).fullName, `roster-shift-SMC_${from}_${to}.pdf`);
+  }),
+);
+
+router.get(
+  '/roster/export.xlsx',
+  ah(async (req, res) => {
+    const { from, to } = exportQuery.parse(req.query);
+    await sendRosterXlsx(res, await loadRosterData(from, to), currentUser(req).fullName, `roster-shift-SMC_${from}_${to}.xlsx`);
   }),
 );
 

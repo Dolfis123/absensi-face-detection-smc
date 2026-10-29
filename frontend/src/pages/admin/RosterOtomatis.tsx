@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useLoad } from '../../components/attendance';
 import { useFeedback } from '../../components/feedback';
+import { RosterDownloadButtons } from '../../components/RosterDownload';
 import { Alert, Badge, Button, Card, cx, Field, Loading, Modal, PageHeader, Select, Table, Td, Th } from '../../components/ui';
 import { api, errMsg, Role } from '../../lib/api';
 import { addDays, fmtDate, mondayOf, shortDay, todayWIT } from '../../lib/format';
@@ -95,6 +96,7 @@ export default function RosterOtomatis() {
   const [generating, setGenerating] = useState(false);
   const [applying, setApplying] = useState(false);
   const [genError, setGenError] = useState<string | null>(null);
+  const [saved, setSaved] = useState<{ from: string; to: string } | null>(null);
 
   useEffect(() => setPreview(null), [start, weeks, shift2Extra]);
 
@@ -162,6 +164,7 @@ export default function RosterOtomatis() {
       );
       await api.put('/admin/schedules', { entries });
       toast(`${entries.length} jadwal tersimpan ke Roster Shift`);
+      setSaved({ from: preview.start, to: preview.end });
       setPreview(null);
     } catch (e) {
       toast(errMsg(e), 'error');
@@ -281,6 +284,20 @@ export default function RosterOtomatis() {
           </div>
         </Card>
       </div>
+
+      {saved && !preview && (
+        <Card
+          className="mt-4"
+          title="Roster tersimpan — siap dibagikan"
+          subtitle={`${fmtDate(saved.from, false)} – ${fmtDate(saved.to, false)}. Unduh lalu kirim ke grup WhatsApp. Aturan internal karyawan tidak ikut dicetak.`}
+          actions={<RosterDownloadButtons from={saved.from} to={saved.to} />}
+        >
+          <p className="text-sm text-slate-600">
+            File berisi satu halaman per minggu (jadwal, jumlah orang per hari, dan keterangan semua simbol) serta rekap Shift 1, Shift 2, Shift Penuh, dan
+            hari Off tiap karyawan. Jadwal juga bisa diunduh kapan saja dari halaman Roster Shift.
+          </p>
+        </Card>
+      )}
 
       {preview && (
         <>
