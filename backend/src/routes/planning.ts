@@ -2,11 +2,12 @@ import { Router } from 'express';
 import { Op } from 'sequelize';
 import { z } from 'zod';
 import { currentUser, requireRole } from '../middleware/auth';
-import { ATTENDEE_ROLES, EmployeeSchedule, Holiday, SLOT_TYPES, ShiftBreak, ShiftChangeLog, User, sequelize } from '../models';
+import { ATTENDEE_ROLES, EmployeeSchedule, Holiday, RosterRule, SLOT_TYPES, Shift, ShiftBreak, ShiftChangeLog, User, sequelize } from '../models';
+import { GenEmployee, generateBestRoster } from '../services/rosterGenerator';
 import { getLateTolerance, saveLateTolerance } from '../services/settings';
 import { BreakInput, loadShifts, SlotInput, validateShiftTimes } from '../services/shiftService';
 import { ah, HttpError } from '../utils/http';
-import { DATE_RE, eachDate, witNow } from '../utils/time';
+import { addDays, DATE_RE, eachDate, witNow } from '../utils/time';
 
 /**
  * Perencanaan shift: roster harian & pengaturan jam shift.
@@ -186,5 +187,141 @@ router.put(
   }),
 );
 
+// ─────────────── Roster Otomatis ───────────────
+const ALL_DAYS = [0, 1, 2, 3, 4, 5, 6];
+const dayList = z.array(z.number().int().min(0).max(6)).transform((xs) => [...new Set(xs)].sort());
+const asDays = (v: unknown): number[] => {
+  const xs = typeof v === 'string' ? JSON.parse(v) : v;
+  return Array.isArray(xs) ? xs.map(Number).filter((n) => n >= 0 && n <= 6) : [];
+};
+
+async function rotationShifts() {
+  const shifts = await Shift.findAll();
+  const byCode = new Map(shifts.map((s) => [s.code, s]));
+  const s1 = byCode.get('SHIFT_1');
+  const s2 = byCode.get('SHIFT_2');
+  if (!s1 || !s2) throw new HttpError(500, 'Shift 1 / Shift 2 tidak ditemukan');
+  return { shifts, s1, s2, full: byCode.get('SHIFT_PENUH') ?? null };
+}
+
+/** Aturan tiap karyawan; yang belum pernah diatur memakai bawaan (Koordinator → Shift Penuh). */
+async function loadRules() {
+  const [{ shifts, s1, s2, full }, users, rules] = await Promise.all([
+    rotationShifts(),
+    User.findAll({ where: { role: [...ATTENDEE_ROLES], isActive: true }, order: [['fullName', 'ASC']] }),
+    RosterRule.findAll(),
+  ]);
+  const byUser = new Map(rules.map((r) => [r.userId, r]));
+  const rows = users.map((u) => {
+    const r = byUser.get(u.id);
+    return {
+      userId: u.id,
+      fullName: u.fullName,
+      nik: u.nik,
+      role: u.role,
+      saved: !!r,
+      fixedShiftId: r ? r.fixedShiftId : u.role === 'KOORDINATOR' ? (full?.id ?? null) : null,
+      offDays: r ? asDays(r.offDays) : ALL_DAYS,
+      noShift1Days: r ? asDays(r.noShift1Days) : [],
+      noShift2Days: r ? asDays(r.noShift2Days) : [],
+      active: r ? r.active : true,
+    };
+  });
+  return { rows, shifts, s1, s2 };
+}
+
+router.get(
+  '/roster/rules',
+  ah(async (_req, res) => {
+    const { rows, shifts, s1, s2 } = await loadRules();
+    res.json({
+      rules: rows,
+      shifts: shifts.map((s) => ({ id: s.id, code: s.code, name: s.name, startTime: s.startTime, endTime: s.endTime })),
+      shift1Id: s1.id,
+      shift2Id: s2.id,
+    });
+  }),
+);
+
+router.put(
+  '/roster/rules/:userId',
+  ah(async (req, res) => {
+    const body = z
+      .object({
+        fixedShiftId: z.number().int().positive().nullable(),
+        offDays: dayList,
+        noShift1Days: dayList,
+        noShift2Days: dayList,
+        active: z.boolean(),
+      })
+      .parse(req.body);
+    const userId = Number(req.params.userId);
+    const user = await User.findByPk(userId);
+    if (!user || !(ATTENDEE_ROLES as readonly string[]).includes(user.role)) throw new HttpError(404, 'Karyawan tidak ditemukan');
+    if (body.fixedShiftId !== null && !(await Shift.findByPk(body.fixedShiftId))) throw new HttpError(400, 'Shift tidak ditemukan');
+    if (body.offDays.length === 0) throw new HttpError(400, 'Pilih minimal satu hari yang boleh Off');
+    if (body.fixedShiftId === null && body.noShift1Days.some((d) => body.noShift2Days.includes(d) && !body.offDays.includes(d))) {
+      throw new HttpError(400, 'Ada hari yang tidak boleh Shift 1 maupun Shift 2 — jadikan hari itu hari Off');
+    }
+    await RosterRule.upsert({ userId, ...body });
+    res.json({ saved: true });
+  }),
+);
+
+/** Membuat pratinjau roster (belum disimpan). Simpan lewat PUT /schedules. */
+router.post(
+  '/roster/generate',
+  ah(async (req, res) => {
+    const body = z
+      .object({
+        start: z.string().regex(DATE_RE),
+        weeks: z.number().int().min(4).max(7),
+        offPerWeek: z.number().int().min(1).max(2).default(1),
+        shift2Extra: z.number().int().min(0).max(5).default(1),
+      })
+      .parse(req.body);
+    if (body.start < witNow().date) throw new HttpError(400, 'Tanggal mulai tidak boleh sebelum hari ini');
+    const end = addDays(body.start, body.weeks * 7 - 1);
+    const { rows, s1, s2 } = await loadRules();
+    const active = rows.filter((r) => r.active);
+    if (active.length === 0) throw new HttpError(400, 'Belum ada karyawan yang ikut roster otomatis');
+    const [holidays, prevRows, existing] = await Promise.all([
+      Holiday.findAll({ where: { date: { [Op.between]: [body.start, end] } } }),
+      EmployeeSchedule.findAll({ where: { date: addDays(body.start, -1) } }),
+      EmployeeSchedule.count({ where: { date: { [Op.between]: [body.start, end] }, userId: active.map((r) => r.userId) } }),
+    ]);
+    const employees: GenEmployee[] = active.map((r) => ({
+      id: r.userId,
+      name: r.fullName,
+      fixedShiftId: r.fixedShiftId,
+      offDays: r.offDays,
+      noShift1Days: r.noShift1Days,
+      noShift2Days: r.noShift2Days,
+    }));
+    const result = generateBestRoster(employees, {
+      ...body,
+      shift1Id: s1.id,
+      shift2Id: s2.id,
+      holidays: new Set(holidays.map((h) => h.date)),
+      prevDay: new Map(prevRows.map((s) => [s.userId, s.shiftId === null ? ('OFF' as const) : s.shiftId])),
+    });
+    res.json({
+      start: body.start,
+      end,
+      dates: result.dates,
+      holidays: holidays.map((h) => ({ date: h.date, name: h.name })),
+      rows: active.map((r) => ({
+        userId: r.userId,
+        fullName: r.fullName,
+        role: r.role,
+        cells: result.dates.map((d) => result.cells.get(r.userId)!.get(d) ?? null),
+      })),
+      stats: result.stats,
+      daily: result.daily,
+      warnings: result.warnings,
+      existingSchedules: existing,
+    });
+  }),
+);
 
 export default router;

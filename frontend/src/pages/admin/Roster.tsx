@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useLoad } from '../../components/attendance';
 import { Alert, Button, Card, Loading, PageHeader } from '../../components/ui';
 import { api, errMsg, Holiday, Role, Shift } from '../../lib/api';
@@ -100,6 +101,9 @@ export default function Roster() {
         subtitle={`Klik sel untuk mengganti: kosong → ${shifts.map((s) => s.name).join(' → ')} → Off. Tanggal yang sudah lewat terkunci.`}
         actions={
           <>
+            <Link to="/app/roster-otomatis">
+              <Button icon="sparkles">Roster Otomatis</Button>
+            </Link>
             <Button variant="secondary" onClick={() => setWeekStart(addDays(weekStart, -7))}>
               ‹ Minggu lalu
             </Button>

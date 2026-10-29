@@ -65,6 +65,7 @@ export const NAV_GROUPS: Record<Role, NavGroup[]> = {
       title: 'Jadwal',
       items: [
         { to: '/app/roster', label: 'Roster Shift', icon: 'calendar' },
+        { to: '/app/roster-otomatis', label: 'Roster Otomatis', icon: 'sparkles' },
         { to: '/app/pengaturan-shift', label: 'Pengaturan Shift', icon: 'clock' },
       ],
     },
@@ -91,6 +92,7 @@ export const NAV_GROUPS: Record<Role, NavGroup[]> = {
       items: [
         { to: '/app/karyawan', label: 'Data Pengguna', icon: 'users' },
         { to: '/app/roster', label: 'Roster Shift', icon: 'calendar' },
+        { to: '/app/roster-otomatis', label: 'Roster Otomatis', icon: 'sparkles' },
         { to: '/app/libur', label: 'Hari Libur', icon: 'calendarX' },
       ],
     },

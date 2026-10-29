@@ -456,6 +456,36 @@ ShiftChangeLog.init(
   { sequelize, tableName: 'shift_change_logs', updatedAt: false },
 );
 
+/**
+ * Aturan penjadwalan per karyawan untuk Roster Otomatis. Hari memakai angka
+ * 0 = Minggu … 6 = Sabtu. Tabel baru → dibuat otomatis oleh sync() di database lama.
+ */
+export class RosterRule extends Model<InferAttributes<RosterRule>, InferCreationAttributes<RosterRule>> {
+  declare userId: number;
+  /** Selalu memakai shift ini (mis. Koordinator → Shift Penuh); null = digilir Shift 1/2. */
+  declare fixedShiftId: number | null;
+  /** Hari yang BOLEH jadi hari Off. */
+  declare offDays: number[];
+  /** Hari yang tidak boleh Shift 1 / Shift 2. */
+  declare noShift1Days: number[];
+  declare noShift2Days: number[];
+  /** Ikut dibuatkan roster otomatis. */
+  declare active: boolean;
+  declare updatedAt: CreationOptional<Date>;
+}
+RosterRule.init(
+  {
+    userId: { type: DataTypes.INTEGER.UNSIGNED, primaryKey: true },
+    fixedShiftId: { type: DataTypes.INTEGER.UNSIGNED, allowNull: true },
+    offDays: { type: DataTypes.JSON, allowNull: false },
+    noShift1Days: { type: DataTypes.JSON, allowNull: false },
+    noShift2Days: { type: DataTypes.JSON, allowNull: false },
+    active: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: true },
+    updatedAt: DataTypes.DATE,
+  },
+  { sequelize, tableName: 'roster_rules', createdAt: false },
+);
+
 /** Catatan saat Super Admin tetap mendaftarkan wajah yang mirip karyawan lain. */
 export class FaceOverrideLog extends Model<InferAttributes<FaceOverrideLog>, InferCreationAttributes<FaceOverrideLog>> {
   declare id: CreationOptional<number>;

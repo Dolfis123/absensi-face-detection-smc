@@ -13,6 +13,7 @@ import Koreksi from './pages/admin/Koreksi';
 import Libur from './pages/admin/Libur';
 import PengaturanShift from './pages/admin/PengaturanShift';
 import Roster from './pages/admin/Roster';
+import RosterOtomatis from './pages/admin/RosterOtomatis';
 import BerandaKaryawan from './pages/karyawan/Beranda';
 import Izin from './pages/karyawan/Izin';
 import Jadwal from './pages/karyawan/Jadwal';
@@ -73,6 +74,7 @@ export default function App() {
         <Route path="review-kendala" element={<Guard roles={REVIEWERS}><ReviewKendala /></Guard>} />
         <Route path="karyawan" element={<Guard roles={ADMIN}><Karyawan /></Guard>} />
         <Route path="roster" element={<Guard roles={REVIEWERS}><Roster /></Guard>} />
+        <Route path="roster-otomatis" element={<Guard roles={REVIEWERS}><RosterOtomatis /></Guard>} />
         <Route path="koreksi" element={<Guard roles={ADMIN}><Koreksi /></Guard>} />
         <Route path="libur" element={<Guard roles={ADMIN}><Libur /></Guard>} />
         <Route path="geofence" element={<Guard roles={ADMIN}><Geofence /></Guard>} />
