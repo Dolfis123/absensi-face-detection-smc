@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { useLoad } from '../../components/attendance';
 import { useFeedback } from '../../components/feedback';
 import { RosterDownloadButtons } from '../../components/RosterDownload';
-import { Alert, Badge, Button, Card, cx, Field, Loading, Modal, PageHeader, Select, Table, Td, Th } from '../../components/ui';
+import { Alert, Badge, Button, Card, cx, Field, Input, Loading, Modal, PageHeader, Select, Table, Td, Th } from '../../components/ui';
 import { api, errMsg, Role } from '../../lib/api';
 import { addDays, fmtDate, mondayOf, shortDay, todayWIT } from '../../lib/format';
 
@@ -26,12 +26,18 @@ interface RulesResponse {
   shift2Id: number;
 }
 type Cell = number | 'OFF' | null;
+interface Post {
+  code: string;
+  area: string;
+  name: string;
+}
 interface Preview {
   start: string;
   end: string;
   dates: string[];
   holidays: { date: string; name: string }[];
-  rows: { userId: number; fullName: string; role: Role; cells: Cell[] }[];
+  rows: { userId: number; fullName: string; role: Role; cells: Cell[]; posts: (string | null)[] }[];
+  posts: Post[];
   stats: {
     userId: number;
     name: string;
@@ -78,6 +84,67 @@ function DayToggles({ value, onChange, tone }: { value: number[]; onChange: (v: 
         );
       })}
     </div>
+  );
+}
+
+/** Daftar pos penempatan (plotting). Urutan = prioritas: bila petugas kurang, pos paling bawah yang dikosongkan. */
+function PostsEditor({ onSaved }: { onSaved: () => void }) {
+  const { toast } = useFeedback();
+  const { data, reload } = useLoad(() => api.get<{ posts: Post[]; defaults: Post[] }>('/admin/roster/posts'));
+  const [draft, setDraft] = useState<Post[] | null>(null);
+  const [saving, setSaving] = useState(false);
+  const list = draft ?? data?.posts ?? [];
+  const set = (i: number, patch: Partial<Post>) => setDraft(list.map((p, j) => (j === i ? { ...p, ...patch } : p)));
+
+  async function save() {
+    setSaving(true);
+    try {
+      await api.put('/admin/roster/posts', { posts: list });
+      toast('Pos penempatan disimpan. Roster ke depan sudah dibagi ulang.');
+      setDraft(null);
+      reload();
+      onSaved();
+    } catch (e) {
+      toast(errMsg(e), 'error');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Card
+      className="mt-4"
+      title="Pos Penempatan (Plotting)"
+      subtitle="Setiap shift dibagi ke pos-pos ini secara bergilir. Urutan = prioritas: bila petugas kurang, pos paling bawah dikosongkan; bila lebih, sisanya jadi Cadangan."
+    >
+      <div className="space-y-2">
+        {list.map((p, i) => (
+          <div key={i} className="grid grid-cols-[4.5rem_1fr_1fr_auto] items-center gap-2">
+            <Input value={p.code} maxLength={6} onChange={(e) => set(i, { code: e.target.value.toUpperCase() })} placeholder="Kode" />
+            <Input value={p.area} onChange={(e) => set(i, { area: e.target.value })} placeholder="Area, mis. Lobi Cendrawasih" />
+            <Input value={p.name} onChange={(e) => set(i, { name: e.target.value })} placeholder="Pos, mis. Pintu Keluar" />
+            <Button variant="ghost" onClick={() => setDraft(list.filter((_, j) => j !== i))} disabled={list.length <= 1} title="Hapus pos">
+              ✕
+            </Button>
+          </div>
+        ))}
+      </div>
+      <div className="mt-3 flex flex-wrap justify-between gap-2">
+        <div className="flex gap-2">
+          <Button variant="secondary" icon="plus" onClick={() => setDraft([...list, { code: '', area: list.at(-1)?.area ?? '', name: '' }])} disabled={list.length >= 10}>
+            Tambah Pos
+          </Button>
+          {data && (
+            <Button variant="ghost" onClick={() => setDraft(data.defaults)}>
+              Kembalikan ke bawaan
+            </Button>
+          )}
+        </div>
+        <Button onClick={save} loading={saving} disabled={!draft}>
+          Simpan Pos
+        </Button>
+      </div>
+    </Card>
   );
 }
 
@@ -371,10 +438,14 @@ export default function RosterOtomatis() {
                     <tr key={r.userId}>
                       <td className="sticky left-0 z-10 whitespace-nowrap bg-white px-2 py-0.5 font-medium">{r.fullName}</td>
                       {r.cells.map((v, i) => {
+                        const post = r.posts[i];
                         const monday = new Date(`${preview.dates[i]}T00:00:00Z`).getUTCDay() === 1;
                         return (
                           <td key={i} className={cx('p-0.5', monday && 'border-l border-slate-200')}>
-                            <div className={cx('flex h-7 w-7 items-center justify-center rounded-md font-semibold', cellCls(v))}>{cellText(v)}</div>
+                            <div className={cx('flex h-9 w-8 flex-col items-center justify-center rounded-md font-semibold leading-none', cellCls(v))}>
+                              {cellText(v)}
+                              {post && <span className="mt-0.5 text-[9px] font-medium opacity-75">{post}</span>}
+                            </div>
                           </td>
                         );
                       })}
@@ -392,6 +463,45 @@ export default function RosterOtomatis() {
               </table>
             </div>
           </Card>
+
+          {preview.posts.length > 0 && (
+            <Card
+              className="mt-4"
+              title="Pemerataan Penempatan (Plotting)"
+              subtitle="Berapa hari tiap petugas di setiap pos. Digilir otomatis: tidak di pos yang sama dua hari berturut-turut. Koordinator tidak diplot."
+            >
+              <Table>
+                <thead>
+                  <tr>
+                    <Th>Petugas</Th>
+                    {[...preview.posts, { code: 'CAD', area: '', name: 'Cadangan' }].map((p) => (
+                      <Th key={p.code} className="text-center">
+                        <div>{p.code}</div>
+                        <div className="text-[10px] font-normal normal-case">{p.name}</div>
+                      </Th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 bg-white">
+                  {preview.rows
+                    .filter((r) => r.posts.some(Boolean))
+                    .map((r) => (
+                      <tr key={r.userId}>
+                        <Td className="font-medium">{r.fullName}</Td>
+                        {[...preview.posts.map((p) => p.code), 'CAD'].map((code) => (
+                          <Td key={code} className="text-center">
+                            {r.posts.filter((x) => x === code).length || '—'}
+                          </Td>
+                        ))}
+                      </tr>
+                    ))}
+                </tbody>
+              </Table>
+              <p className="mt-2 text-xs text-slate-500">
+                {preview.posts.map((p) => `${p.code} = ${p.area} — ${p.name}`).join(' · ')} · CAD = Cadangan (bantu pos ramai & gantikan saat istirahat)
+              </p>
+            </Card>
+          )}
 
           <Card className="mt-4" title="Pemerataan per Karyawan" subtitle="Cek apakah pembagian sudah adil sebelum disimpan">
             <Table>
@@ -434,6 +544,8 @@ export default function RosterOtomatis() {
           </Card>
         </>
       )}
+
+      <PostsEditor onSaved={() => setPreview(null)} />
 
       <Modal open={!!editing} title={editing ? `Aturan: ${editing.fullName}` : ''} onClose={() => setEditing(null)}>
         {editing && (

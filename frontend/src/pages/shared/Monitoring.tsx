@@ -7,7 +7,7 @@ import { fmtDate, STATUS_STYLE } from '../../lib/format';
 
 interface TodayResponse {
   serverTime: { date: string; time: string };
-  rows: (DayRecord & { user: { id: number; fullName: string; nik: string; phone: string; role: Role } })[];
+  rows: (DayRecord & { post: string | null; user: { id: number; fullName: string; nik: string; phone: string; role: Role } })[];
 }
 
 const ORDER: DayStatus[] = ['TEPAT_WAKTU', 'TERLAMBAT', 'ABSEN_SEKALI', 'BELUM', 'ALFA', 'IZIN', 'SAKIT', 'CUTI', 'LIBUR', 'DAY_OFF', 'OFF'];
@@ -99,7 +99,10 @@ export default function Monitoring() {
                   <Td>
                     <PersonCell name={r.user.fullName} sub={r.user.role === 'KOORDINATOR' ? `${r.user.nik} · Koordinator` : r.user.nik} />
                   </Td>
-                  <Td className="text-slate-600">{r.shiftName ?? '—'}</Td>
+                  <Td className="text-slate-600">
+                    {r.shiftName ?? '—'}
+                    {r.post && <div className="text-xs text-slate-400">{r.post}</div>}
+                  </Td>
                   <Td>
                     <StatusBadge status={r.status} />
                     {r.status === 'ABSEN_SEKALI' && r.note && <div className="mt-1 text-xs text-violet-700">{r.note}</div>}

@@ -9,6 +9,7 @@ import { Op } from 'sequelize';
 import { ATTENDEE_ROLES, EmployeeSchedule, Holiday, Shift, User } from '../models';
 import { eachDate, witNow } from '../utils/time';
 import { fmtLongDate } from './pdfReport';
+import { getPosts, Post, RESERVE } from './placement';
 
 const DAY_LONG = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
 const DAY_SHORT = ['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab'];
@@ -30,6 +31,8 @@ const STYLE: Record<Kind, { fill: string; ink: string }> = {
 interface RosterCell {
   kind: Kind;
   text: string;
+  /** Kode pos penempatan, mis. "CK" atau "CAD" */
+  post?: string | null;
 }
 export interface RosterData {
   from: string;
@@ -39,6 +42,8 @@ export interface RosterData {
   shifts: Shift[];
   rows: { id: number; name: string; coordinator: boolean; cells: RosterCell[] }[];
   legend: { kind: Kind; symbol: string; meaning: string }[];
+  /** Pos penempatan yang dipakai di periode ini (urut sesuai pengaturan), termasuk Cadangan bila ada */
+  posts: Post[];
 }
 
 const kindOf = (s: Shift): Kind => (s.code === 'SHIFT_1' ? 'S1' : s.code === 'SHIFT_2' ? 'S2' : s.code === 'SHIFT_PENUH' ? 'FULL' : 'OTHER');
@@ -46,11 +51,12 @@ const symbolOf = (s: Shift) => (s.code === 'SHIFT_PENUH' ? 'PENUH' : s.name.repl
 
 export async function loadRosterData(from: string, to: string): Promise<RosterData> {
   const dates = eachDate(from, to);
-  const [shifts, users, schedules, holidays] = await Promise.all([
+  const [shifts, users, schedules, holidays, postList] = await Promise.all([
     Shift.findAll({ order: [['id', 'ASC']] }),
     User.findAll({ where: { role: [...ATTENDEE_ROLES], isActive: true } }),
     EmployeeSchedule.findAll({ where: { date: { [Op.between]: [from, to] } } }),
     Holiday.findAll({ where: { date: { [Op.between]: [from, to] } } }),
+    getPosts(),
   ]);
   const shiftById = new Map(shifts.map((s) => [s.id, s]));
   const holidayMap = new Map(holidays.map((h) => [h.date, h.name]));
@@ -67,7 +73,7 @@ export async function loadRosterData(from: string, to: string): Promise<RosterDa
       if (!s) return { kind: 'EMPTY', text: '—' };
       if (s.shiftId === null) return { kind: 'OFF', text: 'OFF' };
       const shift = shiftById.get(s.shiftId);
-      return shift ? { kind: kindOf(shift), text: symbolOf(shift) } : { kind: 'EMPTY', text: '—' };
+      return shift ? { kind: kindOf(shift), text: symbolOf(shift), post: s.post } : { kind: 'EMPTY', text: '—' };
     }),
   }));
   const used = new Set(rows.flatMap((r) => r.cells.map((c) => c.text)));
@@ -77,13 +83,15 @@ export async function loadRosterData(from: string, to: string): Promise<RosterDa
       .map((s) => ({
         kind: kindOf(s),
         symbol: symbolOf(s),
-        meaning: `${s.name}: masuk ${s.startTime}, pulang ${s.endTime} WIT${s.code === 'SHIFT_PENUH' ? ' (pagi sampai malam)' : ''}`,
+        meaning: `${s.name}: masuk ${s.startTime}, pulang ${s.endTime} WIT${s.code === 'SHIFT_PENUH' ? ' (pagi–malam)' : ''}`,
       })),
-    { kind: 'OFF', symbol: 'OFF', meaning: 'Hari libur pribadi (istirahat mingguan). Tidak perlu absen.' },
+    { kind: 'OFF', symbol: 'OFF', meaning: 'Libur pribadi (Off mingguan), tidak perlu absen.' },
   ];
   if (used.has('LIBUR')) legend.push({ kind: 'HOLIDAY', symbol: 'LIBUR', meaning: 'Hari libur nasional / kantor. Tidak perlu absen.' });
   if (used.has('—')) legend.push({ kind: 'EMPTY', symbol: '—', meaning: 'Belum dijadwalkan. Tanyakan ke Koordinator Lapangan.' });
-  return { from, to, dates, holidays: holidayMap, shifts, rows, legend };
+  const usedPosts = new Set(rows.flatMap((r) => r.cells.map((c) => c.post).filter(Boolean)));
+  const posts = [...postList.filter((p) => usedPosts.has(p.code)), ...(usedPosts.has(RESERVE.code) ? [RESERVE] : [])];
+  return { from, to, dates, holidays: holidayMap, shifts, rows, legend, posts };
 }
 
 function counts(cells: RosterCell[]) {
@@ -118,7 +126,7 @@ export function sendRosterPdf(res: Response, r: RosterData, generatedBy: string,
   const header = (subtitle: string) => {
     doc.rect(0, 0, pageW, 62).fill('#0c2b52');
     doc.font('Helvetica-Bold').fontSize(17).fillColor('#ffffff').text('ROSTER SHIFT KARYAWAN PARKIR', MARGIN, 14);
-    doc.font('Helvetica').fontSize(9).fillColor('#bcdaff').text('Pos Parkir Mal SMC (Sorong Mega Mall) · Kota Sorong', MARGIN, 36);
+    doc.font('Helvetica').fontSize(9).fillColor('#bcdaff').text('Pos Parkir Mall Sorong Modern City (SMC) · Kota Sorong', MARGIN, 36);
     doc.font('Helvetica-Bold').fontSize(11).fillColor('#ffffff').text(subtitle, MARGIN, 16, { width: usable, align: 'right' });
     doc.font('Helvetica').fontSize(8).fillColor('#bcdaff').text(`Periode ${periodText(r)}`, MARGIN, 36, { width: usable, align: 'right' });
     doc.y = 76;
@@ -126,17 +134,35 @@ export function sendRosterPdf(res: Response, r: RosterData, generatedBy: string,
 
   const legendBox = (y: number) => {
     doc.font('Helvetica-Bold').fontSize(9).fillColor(INK).text('KETERANGAN', MARGIN, y);
-    let ly = y + 14;
-    const colW = usable / 2;
-    r.legend.forEach((l, i) => {
-      const x = MARGIN + (i % 2) * colW;
-      const yy = ly + Math.floor(i / 2) * 17;
-      doc.roundedRect(x, yy, 46, 13, 2).fill(STYLE[l.kind].fill);
-      if (l.kind === 'EMPTY') doc.roundedRect(x, yy, 46, 13, 2).lineWidth(0.5).strokeColor(GRID).stroke();
-      doc.font('Helvetica-Bold').fontSize(7.5).fillColor(STYLE[l.kind].ink).text(l.symbol, x, yy + 3, { width: 46, align: 'center' });
-      doc.font('Helvetica').fontSize(8).fillColor(INK).text(l.meaning, x + 52, yy + 2.5, { width: colW - 60 });
-    });
-    ly += Math.ceil(r.legend.length / 2) * 17 + 4;
+    let ly = y + 13;
+    const colW = usable / 3;
+    // Tinggi tiap baris keterangan mengikuti teks terpanjang di baris itu (teks bisa 2 baris)
+    for (let i = 0; i < r.legend.length; i += 3) {
+      const row = r.legend.slice(i, i + 3);
+      doc.font('Helvetica').fontSize(8);
+      const h = Math.max(15, ...row.map((l) => doc.heightOfString(l.meaning, { width: colW - 60 }) + 5));
+      row.forEach((l, j) => {
+        const x = MARGIN + j * colW;
+        doc.roundedRect(x, ly, 46, 13, 2).fill(STYLE[l.kind].fill);
+        if (l.kind === 'EMPTY') doc.roundedRect(x, ly, 46, 13, 2).lineWidth(0.5).strokeColor(GRID).stroke();
+        doc.font('Helvetica-Bold').fontSize(7.5).fillColor(STYLE[l.kind].ink).text(l.symbol, x, ly + 3, { width: 46, align: 'center' });
+        doc.font('Helvetica').fontSize(8).fillColor(INK).text(l.meaning, x + 52, ly + 2.5, { width: colW - 60 });
+      });
+      ly += h;
+    }
+    ly += 2;
+    if (r.posts.length) {
+      doc.font('Helvetica-Bold').fontSize(9).fillColor(INK).text('PENEMPATAN (PLOTTING) — kode kecil di bawah shift', MARGIN, ly);
+      ly += 13;
+      r.posts.forEach((p, i) => {
+        const x = MARGIN + (i % 3) * colW;
+        const yy = ly + Math.floor(i / 3) * 15;
+        doc.roundedRect(x, yy, 46, 13, 2).lineWidth(0.6).strokeColor('#94a3b8').stroke();
+        doc.font('Helvetica-Bold').fontSize(7.5).fillColor(INK).text(p.code, x, yy + 3, { width: 46, align: 'center' });
+        doc.font('Helvetica').fontSize(8).fillColor(INK).text(p.code === RESERVE.code ? p.name : `${p.area} — ${p.name}`, x + 52, yy + 2.5, { width: colW - 58 });
+      });
+      ly += Math.ceil(r.posts.length / 3) * 15 + 2;
+    }
     doc.font('Helvetica').fontSize(7.5).fillColor(MUTED);
     for (const n of NOTES) {
       doc.text(`•  ${n}`, MARGIN, ly, { width: usable });
@@ -153,7 +179,7 @@ export function sendRosterPdf(res: Response, r: RosterData, generatedBy: string,
     header(`Minggu ke-${wi + 1} dari ${weeks.length}`);
     const nameW = 190;
     const colW = (usable - nameW) / 7;
-    const rowH = Math.min(24, Math.max(15, (doc.page.height - 76 - 175 - 34) / Math.max(1, r.rows.length + 1)));
+    const rowH = Math.min(24, Math.max(15, (doc.page.height - 76 - 30 - 34 - (r.posts.length ? 185 : 140)) / Math.max(1, r.rows.length + 1)));
     let y = doc.y;
 
     // Kepala kolom: hari + tanggal
@@ -177,7 +203,12 @@ export function sendRosterPdf(res: Response, r: RosterData, generatedBy: string,
         const c = row.cells[start + i];
         const x = MARGIN + nameW + i * colW;
         doc.roundedRect(x + 3, y + 2, colW - 6, rowH - 4, 3).fill(STYLE[c.kind].fill);
-        doc.font('Helvetica-Bold').fontSize(9).fillColor(STYLE[c.kind].ink).text(c.text, x, y + rowH / 2 - 4.5, { width: colW, align: 'center' });
+        if (c.post) {
+          doc.font('Helvetica-Bold').fontSize(8.5).fillColor(STYLE[c.kind].ink).text(c.text, x, y + rowH / 2 - 8, { width: colW, align: 'center', lineBreak: false });
+          doc.font('Helvetica').fontSize(7).text(c.post, x, y + rowH / 2 + 0.5, { width: colW, align: 'center', lineBreak: false });
+        } else {
+          doc.font('Helvetica-Bold').fontSize(9).fillColor(STYLE[c.kind].ink).text(c.text, x, y + rowH / 2 - 4.5, { width: colW, align: 'center' });
+        }
       });
       doc.moveTo(MARGIN, y + rowH).lineTo(MARGIN + usable, y + rowH).lineWidth(0.4).strokeColor(GRID).stroke();
       y += rowH;
@@ -255,6 +286,46 @@ export function sendRosterPdf(res: Response, r: RosterData, generatedBy: string,
     y += h;
   });
   doc.font('Helvetica').fontSize(8).fillColor(MUTED).text(`Jumlah hari dihitung selama periode ${periodText(r)} (${r.dates.length} hari).`, MARGIN, y + 8);
+
+  // ── Rekap penempatan: berapa kali tiap orang di tiap pos ──
+  const plotted = r.rows.filter((row) => row.cells.some((c) => c.post));
+  if (r.posts.length && plotted.length) {
+    doc.addPage();
+    header('Rekap Penempatan (Plotting)');
+    const nameW = 230;
+    const postW = Math.min(80, (usable - nameW - 34 - 60) / r.posts.length);
+    let py = doc.y;
+    doc.font('Helvetica').fontSize(8.5).fillColor(MUTED).text('Jumlah hari tiap petugas ditempatkan di setiap pos. Penempatan digilir otomatis supaya merata dan tidak di pos yang sama dua hari berturut-turut.', MARGIN, py, { width: usable });
+    py += 18;
+    doc.rect(MARGIN, py, usable, 34).fill('#f1f5f9');
+    doc.font('Helvetica-Bold').fontSize(8.5).fillColor(MUTED).text('NO', MARGIN, py + 13, { width: 34, align: 'center' });
+    doc.text('NAMA PETUGAS', MARGIN + 40, py + 13);
+    r.posts.forEach((p, i) => {
+      const x = MARGIN + 34 + nameW + i * postW;
+      doc.font('Helvetica-Bold').fontSize(9).fillColor(INK).text(p.code, x, py + 5, { width: postW, align: 'center' });
+      doc.font('Helvetica').fontSize(6.5).fillColor(MUTED).text(p.code === RESERVE.code ? 'Cadangan' : p.name, x + 2, py + 17, { width: postW - 4, align: 'center', lineBreak: false, ellipsis: true });
+    });
+    doc.font('Helvetica-Bold').fontSize(8.5).fillColor(MUTED).text('TOTAL', MARGIN + 34 + nameW + r.posts.length * postW, py + 13, { width: 60, align: 'center' });
+    py += 34;
+    plotted.forEach((row, ri) => {
+      if (ri % 2 === 1) doc.rect(MARGIN, py, usable, 18).fill('#f8fafc');
+      doc.font('Helvetica').fontSize(9).fillColor(INK).text(String(ri + 1), MARGIN, py + 5, { width: 34, align: 'center' });
+      doc.text(row.name, MARGIN + 40, py + 5, { width: nameW - 10, lineBreak: false });
+      let total = 0;
+      r.posts.forEach((p, i) => {
+        const n = row.cells.filter((c) => c.post === p.code).length;
+        total += n;
+        doc.text(n ? String(n) : '—', MARGIN + 34 + nameW + i * postW, py + 5, { width: postW, align: 'center' });
+      });
+      doc.font('Helvetica-Bold').text(String(total), MARGIN + 34 + nameW + r.posts.length * postW, py + 5, { width: 60, align: 'center' });
+      doc.moveTo(MARGIN, py + 18).lineTo(MARGIN + usable, py + 18).lineWidth(0.4).strokeColor(GRID).stroke();
+      py += 18;
+    });
+    py += 10;
+    r.posts.forEach((p, i) => {
+      doc.font('Helvetica').fontSize(8).fillColor(INK).text(`${p.code} = ${p.code === RESERVE.code ? p.name : `${p.area} — ${p.name}`}`, MARGIN + (i % 2) * (usable / 2), py + Math.floor(i / 2) * 12, { width: usable / 2 - 10 });
+    });
+  }
   doc.end();
 }
 
@@ -270,7 +341,7 @@ export async function sendRosterXlsx(res: Response, r: RosterData, generatedBy: 
   const border = { top: thin, left: thin, bottom: thin, right: thin };
 
   ws.mergeCells(1, 1, 1, lastCol);
-  ws.getCell(1, 1).value = 'ROSTER SHIFT KARYAWAN PARKIR — Pos Parkir Mal SMC (Sorong Mega Mall)';
+  ws.getCell(1, 1).value = 'ROSTER SHIFT KARYAWAN PARKIR — Pos Parkir Mall Sorong Modern City (SMC)';
   ws.getCell(1, 1).font = { bold: true, size: 14, color: { argb: 'FF0C2B52' } };
   ws.mergeCells(2, 1, 2, lastCol);
   ws.getCell(2, 1).value = `Periode ${periodText(r)} · dicetak ${fmtLongDate(witNow().date)} oleh ${generatedBy}`;
@@ -312,7 +383,7 @@ export async function sendRosterXlsx(res: Response, r: RosterData, generatedBy: 
     ws.getCell(rowNo, 2).border = border;
     row.cells.forEach((c, i) => {
       const cell = ws.getCell(rowNo, i + 3);
-      cell.value = c.text;
+      cell.value = c.post ? `${c.text} ${c.post}` : c.text;
       cell.alignment = { horizontal: 'center', vertical: 'middle' };
       cell.font = { bold: true, size: 9, color: { argb: argb(STYLE[c.kind].ink) } };
       cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: argb(STYLE[c.kind].fill) } };
@@ -358,6 +429,22 @@ export async function sendRosterXlsx(res: Response, r: RosterData, generatedBy: 
     ws.getCell(ly, 3).value = l.meaning;
     ly++;
   }
+  if (r.posts.length) {
+    ly++;
+    ws.getCell(ly, 2).value = 'PENEMPATAN (PLOTTING) — kode setelah shift, mis. "S1 CK"';
+    ws.getCell(ly, 2).font = { bold: true, size: 11 };
+    ly++;
+    for (const p of r.posts) {
+      const sym = ws.getCell(ly, 2);
+      sym.value = p.code;
+      sym.alignment = { horizontal: 'center' };
+      sym.font = { bold: true };
+      sym.border = border;
+      ws.mergeCells(ly, 3, ly, Math.min(lastCol, 16));
+      ws.getCell(ly, 3).value = p.code === RESERVE.code ? p.name : `${p.area} — ${p.name}`;
+      ly++;
+    }
+  }
   for (const [d, name] of r.holidays) {
     ws.mergeCells(ly, 3, ly, Math.min(lastCol, 16));
     ws.getCell(ly, 2).value = 'Hari libur';
@@ -374,14 +461,14 @@ export async function sendRosterXlsx(res: Response, r: RosterData, generatedBy: 
 
   ws.getColumn(1).width = 5;
   ws.getColumn(2).width = 34;
-  for (let i = 3; i <= lastCol; i++) ws.getColumn(i).width = 7.5;
+  for (let i = 3; i <= lastCol; i++) ws.getColumn(i).width = r.posts.length ? 9.5 : 7.5;
 
   // Lembar rekap
   const rk = wb.addWorksheet('Rekap per Karyawan', { views: [{ state: 'frozen', ySplit: 3 }] });
-  rk.mergeCells(1, 1, 1, 7);
+  rk.mergeCells(1, 1, 1, 7 + r.posts.length);
   rk.getCell(1, 1).value = `Rekap Roster ${periodText(r)} (${r.dates.length} hari)`;
   rk.getCell(1, 1).font = { bold: true, size: 13, color: { argb: 'FF0C2B52' } };
-  const head = ['No', 'Nama Karyawan', 'Shift 1', 'Shift 2', 'Shift Penuh', 'Off', 'Tanggal Off'];
+  const head = ['No', 'Nama Karyawan', 'Shift 1', 'Shift 2', 'Shift Penuh', 'Off', 'Tanggal Off', ...r.posts.map((p) => `Pos ${p.code}`)];
   head.forEach((h, i) => {
     const c = rk.getCell(3, i + 1);
     c.value = h;
@@ -393,7 +480,7 @@ export async function sendRosterXlsx(res: Response, r: RosterData, generatedBy: 
   r.rows.forEach((row, ri) => {
     const c = counts(row.cells);
     const offs = r.dates.filter((_, i) => row.cells[i].kind === 'OFF').map((d) => `${DAY_SHORT[weekday(d)]} ${ddmm(d)}`).join(', ');
-    const vals = [ri + 1, `${row.name}${row.coordinator ? ' (Koordinator)' : ''}`, c.S1, c.S2, c.FULL, c.OFF, offs || '—'];
+    const vals = [ri + 1, `${row.name}${row.coordinator ? ' (Koordinator)' : ''}`, c.S1, c.S2, c.FULL, c.OFF, offs || '—', ...r.posts.map((p) => row.cells.filter((x) => x.post === p.code).length)];
     vals.forEach((v, i) => {
       const cell = rk.getCell(4 + ri, i + 1);
       cell.value = v;
@@ -401,10 +488,72 @@ export async function sendRosterXlsx(res: Response, r: RosterData, generatedBy: 
       cell.alignment = { horizontal: i === 1 || i === 6 ? 'left' : 'center', wrapText: i === 6 };
     });
   });
-  [5, 34, 10, 10, 12, 8, 70].forEach((w, i) => (rk.getColumn(i + 1).width = w));
+  [5, 34, 10, 10, 12, 8, 70, ...r.posts.map(() => 9)].forEach((w, i) => (rk.getColumn(i + 1).width = w));
+  r.posts.forEach((p, i) => (rk.getCell(4 + r.rows.length + 2 + i, 2).value = `Pos ${p.code} = ${p.code === RESERVE.code ? p.name : `${p.area} — ${p.name}`}`));
 
   res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
   res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
   await wb.xlsx.write(res);
   res.end();
+}
+
+// ─────────────── Teks WhatsApp harian ───────────────
+const dot = (t: string) => t.replace(':', '.');
+const partOfDay = (t: string) => {
+  const h = Number(t.slice(0, 2));
+  return h < 11 ? 'PAGI' : h < 15 ? 'SIANG' : h < 18 ? 'SORE' : 'MALAM';
+};
+const longDate = (d: string) => `${DAY_LONG[weekday(d)]}, ${fmtLongDate(d)}`;
+
+/** Teks jadwal satu hari dengan format seperti jadwal manual manajemen Mall SMC. */
+export async function buildWhatsappText(date: string): Promise<string> {
+  const [shifts, users, schedules, holiday, posts] = await Promise.all([
+    Shift.findAll({ order: [['id', 'ASC']] }),
+    User.findAll({ where: { role: [...ATTENDEE_ROLES], isActive: true } }),
+    EmployeeSchedule.findAll({ where: { date } }),
+    Holiday.findOne({ where: { date } }),
+    getPosts(),
+  ]);
+  const name = new Map(users.map((u) => [u.id, u.fullName]));
+  const coordinators = new Set(users.filter((u) => u.role === 'KOORDINATOR').map((u) => u.id));
+  const rows = schedules.filter((s) => name.has(s.userId));
+  const working = rows.filter((s) => s.shiftId !== null);
+  const coordNames = working.filter((s) => coordinators.has(s.userId)).map((s) => name.get(s.userId)!);
+  const coordText = coordNames.length ? coordNames.join(', ') : 'Off hari ini';
+  const rotation = shifts.filter((sh) => working.some((s) => s.shiftId === sh.id && !coordinators.has(s.userId)));
+
+  const out: string[] = [];
+  out.push('📅 *JADWAL SHIFT PETUGAS PARKIRAN*', '', 'Mall Sorong Modern City', `📅 Berlaku: *${longDate(date)}*`);
+  if (holiday) out.push(`🎉 Hari libur: ${holiday.name}`);
+  out.push('', '✅ *INFORMASI UMUM*', '', '- 📌 Sistem Absensi: Absensi Online (wajah + lokasi di pos)');
+  for (const sh of rotation) out.push(`- ⏰ ${sh.name}: ${dot(sh.startTime)} – ${dot(sh.endTime)}`);
+  out.push(`- 👤 Koordinator: ${coordText}`);
+
+  for (const sh of rotation) {
+    const members = working
+      .filter((s) => s.shiftId === sh.id && !coordinators.has(s.userId))
+      .sort((a, b) => name.get(a.userId)!.localeCompare(name.get(b.userId)!));
+    out.push('', `*${sh.name.toUpperCase()} — ${partOfDay(sh.startTime)} – ${partOfDay(sh.endTime)} · ${dot(sh.startTime)} – ${dot(sh.endTime)}*`, '', `Koordinator: ${coordText}`, '', 'Anggota:', '');
+    members.forEach((m, i) => out.push(`${i + 1}. ${name.get(m.userId)}`));
+    const byPost = new Map(members.filter((m) => m.post).map((m) => [m.post!, name.get(m.userId)!]));
+    if (byPost.size) {
+      out.push('', '📍 *PENEMPATAN (PLOTTING):*');
+      for (const area of [...new Set(posts.map((p) => p.area))]) {
+        const inArea = posts.filter((p) => p.area === area && byPost.has(p.code));
+        if (!inArea.length) continue;
+        out.push('', `🔹 ${area}`, '');
+        for (const p of inArea) out.push(`- ${p.name} : ${byPost.get(p.code)}`);
+      }
+      const reserve = members.filter((m) => m.post === RESERVE.code).map((m) => name.get(m.userId));
+      if (reserve.length) out.push('', `🔸 Cadangan (bantu pos ramai & gantikan saat istirahat): ${reserve.join(', ')}`);
+    }
+  }
+
+  const off = rows.filter((s) => s.shiftId === null).map((s) => name.get(s.userId)!).sort();
+  if (off.length) {
+    out.push('', `*OFF / ISTIRAHAT — ${longDate(date)}*`, '');
+    off.forEach((n, i) => out.push(`${i + 1}. ${n}`));
+  }
+  if (working.length === 0) out.push('', '_Belum ada jadwal untuk tanggal ini._');
+  return out.join('\n');
 }

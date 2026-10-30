@@ -4,7 +4,8 @@ import { Op } from 'sequelize';
 import { z } from 'zod';
 import { currentUser, requireRole } from '../middleware/auth';
 import { leaveUploadDir } from '../middleware/upload';
-import { AttendanceIssue, Holiday, LeaveRequest, Shift, ShiftBreak, ShiftSlot, User } from '../models';
+import { AttendanceIssue, EmployeeSchedule, Holiday, LeaveRequest, Shift, ShiftBreak, ShiftSlot, User } from '../models';
+import { getPosts, postLabel } from '../services/placement';
 import { sendCsv } from '../services/csv';
 import { dayNotes, fmtLongDate, fmtMonth, sendAttendancePdf } from '../services/pdfReport';
 import { buildRecap } from '../services/recapService';
@@ -72,10 +73,15 @@ router.get(
   reviewers,
   ah(async (_req, res) => {
     const now = witNow();
-    const recap = await buildRecap(now.date, now.date);
+    const [recap, schedules, posts] = await Promise.all([
+      buildRecap(now.date, now.date),
+      EmployeeSchedule.findAll({ where: { date: now.date } }),
+      getPosts(),
+    ]);
+    const postOf = new Map(schedules.map((s) => [s.userId, s.post]));
     res.json({
       serverTime: now,
-      rows: recap.map((r) => ({ user: r.user, ...r.days[0] })),
+      rows: recap.map((r) => ({ user: r.user, ...r.days[0], post: postLabel(posts, postOf.get(r.user.id)) })),
     });
   }),
 );

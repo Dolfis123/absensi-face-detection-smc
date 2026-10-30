@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useLoad } from '../../components/attendance';
 import { RosterDownloadButtons } from '../../components/RosterDownload';
+import { WhatsappDayButton } from '../../components/WhatsappDay';
 import { Alert, Button, Card, Field, Loading, PageHeader, Select } from '../../components/ui';
 import { api, errMsg, Holiday, Role, Shift } from '../../lib/api';
 import { addDays, fmtDate, mondayOf, shortDay, todayWIT } from '../../lib/format';
@@ -9,7 +10,8 @@ import { addDays, fmtDate, mondayOf, shortDay, todayWIT } from '../../lib/format
 interface RosterResponse {
   employees: { id: number; fullName: string; nik: string; role: Role; defaultShiftId: number | null }[];
   // shiftId null = hari Off yang sengaja ditetapkan
-  schedules: { userId: number; date: string; shiftId: number | null }[];
+  schedules: { userId: number; date: string; shiftId: number | null; post: string | null }[];
+  posts: { code: string; area: string; name: string }[];
 }
 
 /** Isi satu sel roster: id shift, 'OFF' (libur pribadi), atau null (belum dijadwalkan). */
@@ -51,6 +53,7 @@ export default function Roster() {
   const [roster, shifts, holidays] = data;
   const original = new Map<string, Cell>(roster.schedules.map((s) => [key(s.userId, s.date), toCell(s.shiftId)]));
   const holidaySet = new Map(holidays.map((h) => [h.date, h.name]));
+  const postOf = new Map(roster.schedules.map((s) => [key(s.userId, s.date), s.post]));
   const changes = [...draft.entries()].filter(([k, v]) => (original.get(k) ?? null) !== v);
   for (const k of original.keys()) if (!draft.has(k)) changes.push([k, null]);
 
@@ -136,6 +139,7 @@ export default function Roster() {
                       {sd.day}
                       <div className="text-base">{sd.num}</div>
                       {holidaySet.has(d) && <div className="text-[10px] text-rose-500">Libur</div>}
+                      <WhatsappDayButton date={d} />
                     </th>
                   );
                 })}
@@ -162,6 +166,9 @@ export default function Roster() {
                           } ${past ? 'cursor-not-allowed opacity-60' : 'hover:ring-brand-500'}`}
                         >
                           {cellText(v)}
+                          {!changed && typeof v === 'number' && postOf.get(key(e.id, d)) && (
+                            <div className="text-[10px] font-medium opacity-70">{postOf.get(key(e.id, d))}</div>
+                          )}
                         </button>
                       </td>
                     );
@@ -186,6 +193,19 @@ export default function Roster() {
             <span className="h-3 w-5 rounded bg-white ring-1 ring-slate-300" />— belum dijadwalkan
           </span>
         </div>
+        {roster.posts.length > 0 && (
+          <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-600">
+            <span className="font-semibold">Pos penempatan (kode kecil di sel, digilir otomatis):</span>
+            {roster.posts.map((p) => (
+              <span key={p.code}>
+                <b>{p.code}</b> {p.area} — {p.name}
+              </span>
+            ))}
+            <span>
+              <b>CAD</b> Cadangan
+            </span>
+          </div>
+        )}
         <div className="mt-4 flex flex-wrap justify-end gap-2">
           <Button variant="secondary" onClick={fillDefault} title="Hari yang sudah ditandai Off atau sudah berisi shift tidak diubah">
             Isi yang kosong dari shift default

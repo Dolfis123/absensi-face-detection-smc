@@ -216,12 +216,15 @@ export class EmployeeSchedule extends Model<
   // null = hari Off (libur pribadi) yang ditetapkan di roster; berbeda dengan tanggal tanpa baris (belum dijadwalkan)
   declare shiftId: ForeignKey<number | null>;
   declare date: string;
+  /** Kode pos penempatan (plotting), mis. "CK"; diisi otomatis secara bergilir. null = tanpa penempatan. */
+  declare post: CreationOptional<string | null>;
   declare shift?: NonAttribute<Shift>;
 }
 EmployeeSchedule.init(
   {
     id: { type: DataTypes.INTEGER.UNSIGNED, autoIncrement: true, primaryKey: true },
     date: { type: DataTypes.DATEONLY, allowNull: false },
+    post: { type: DataTypes.STRING(20), allowNull: true, defaultValue: null },
   },
   {
     sequelize,

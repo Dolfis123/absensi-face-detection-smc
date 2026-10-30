@@ -3,7 +3,8 @@ import { Op } from 'sequelize';
 import { z } from 'zod';
 import { currentUser, requireRole } from '../middleware/auth';
 import { ATTENDEE_ROLES, EmployeeSchedule, Holiday, RosterRule, SLOT_TYPES, Shift, ShiftBreak, ShiftChangeLog, User, sequelize } from '../models';
-import { loadRosterData, sendRosterPdf, sendRosterXlsx } from '../services/rosterExport';
+import { assignPlacements, DEFAULT_POSTS, getPosts, loadHistory, plottedUserFilter, rebalancePlacements, savePosts } from '../services/placement';
+import { buildWhatsappText, loadRosterData, sendRosterPdf, sendRosterXlsx } from '../services/rosterExport';
 import { GenEmployee, generateBestRoster } from '../services/rosterGenerator';
 import { getLateTolerance, saveLateTolerance } from '../services/settings';
 import { BreakInput, loadShifts, SlotInput, validateShiftTimes } from '../services/shiftService';
@@ -28,13 +29,15 @@ router.get(
   '/schedules',
   ah(async (req, res) => {
     const { from, to } = rangeQuery.parse(req.query);
-    const [employees, schedules] = await Promise.all([
+    const [employees, schedules, posts] = await Promise.all([
       User.findAll({ where: { role: [...ATTENDEE_ROLES], isActive: true }, order: [['fullName', 'ASC']] }),
       EmployeeSchedule.findAll({ where: { date: { [Op.between]: [from, to] } } }),
+      getPosts(),
     ]);
     res.json({
       employees: employees.map((u) => ({ id: u.id, fullName: u.fullName, nik: u.nik, role: u.role, defaultShiftId: u.defaultShiftId })),
-      schedules: schedules.map((s) => ({ userId: s.userId, date: s.date, shiftId: s.shiftId })),
+      schedules: schedules.map((s) => ({ userId: s.userId, date: s.date, shiftId: s.shiftId, post: s.post })),
+      posts,
     });
   }),
 );
@@ -72,6 +75,11 @@ router.put(
         }
       }
     });
+    // Penempatan pos dihitung ulang untuk tanggal yang berubah supaya tetap lengkap & merata
+    if (entries.length > 0) {
+      const dates = entries.map((e) => e.date).sort();
+      await rebalancePlacements(dates[0], dates[dates.length - 1]);
+    }
     res.json({ updated: entries.length });
   }),
 );
@@ -98,6 +106,7 @@ router.post(
         : [],
     );
     await EmployeeSchedule.bulkCreate(rows);
+    if (rows.length > 0) await rebalancePlacements(dates[0], dates[dates.length - 1]);
     res.json({ created: rows.length });
   }),
 );
@@ -306,6 +315,21 @@ router.post(
       holidays: new Set(holidays.map((h) => h.date)),
       prevDay: new Map(prevRows.map((s) => [s.userId, s.shiftId === null ? ('OFF' as const) : s.shiftId])),
     });
+    // Pratinjau penempatan pos, dihitung dengan cara yang sama seperti saat roster disimpan
+    const [posts, plotted, start] = await Promise.all([getPosts(), plottedUserFilter(), loadHistory(body.start)]);
+    const placement = assignPlacements(
+      result.dates.map((date) => {
+        const groups = new Map<number, number[]>();
+        for (const r of active) {
+          const c = result.cells.get(r.userId)!.get(date);
+          if (typeof c === 'number' && plotted(r.userId)) groups.set(c, [...(groups.get(c) ?? []), r.userId]);
+        }
+        return { date, groups: [...groups.entries()].sort((a, b) => a[0] - b[0]).map(([, ids]) => ids) };
+      }),
+      posts.map((p) => p.code),
+      start.history,
+      start.last,
+    );
     if (result.violations.length > 0) {
       throw new HttpError(400, `Aturan karyawan tidak bisa dipenuhi semua: ${result.violations.slice(0, 5).join('; ')}`);
     }
@@ -319,12 +343,62 @@ router.post(
         fullName: r.fullName,
         role: r.role,
         cells: result.dates.map((d) => result.cells.get(r.userId)!.get(d) ?? null),
+        posts: result.dates.map((d) => placement.get(`${r.userId}|${d}`) ?? null),
       })),
+      posts,
       stats: result.stats,
       daily: result.daily,
       warnings: result.warnings,
       existingSchedules: existing,
     });
+  }),
+);
+
+// ─────────────── Pos penempatan (plotting) ───────────────
+router.get(
+  '/roster/posts',
+  ah(async (_req, res) => {
+    res.json({ posts: await getPosts(), defaults: DEFAULT_POSTS });
+  }),
+);
+
+router.put(
+  '/roster/posts',
+  ah(async (req, res) => {
+    const { posts } = z
+      .object({
+        posts: z
+          .array(
+            z.object({
+              code: z
+                .string()
+                .trim()
+                .toUpperCase()
+                .regex(/^[A-Z0-9]{1,6}$/, 'Kode pos 1–6 huruf/angka tanpa spasi')
+                .refine((c) => c !== 'CAD', 'Kode CAD dipakai untuk Cadangan'),
+              area: z.string().trim().min(2, 'Nama area wajib diisi').max(60),
+              name: z.string().trim().min(2, 'Nama pos wajib diisi').max(60),
+            }),
+          )
+          .min(1, 'Minimal satu pos')
+          .max(10),
+      })
+      .parse(req.body);
+    if (new Set(posts.map((p) => p.code)).size !== posts.length) throw new HttpError(400, 'Kode pos tidak boleh kembar');
+    await savePosts(posts, currentUser(req).id);
+    // Roster ke depan langsung memakai daftar pos yang baru
+    const today = witNow().date;
+    await rebalancePlacements(today, addDays(today, 120));
+    res.json({ posts });
+  }),
+);
+
+/** Teks jadwal harian siap tempel ke grup WhatsApp (format seperti jadwal manual manajemen). */
+router.get(
+  '/roster/whatsapp',
+  ah(async (req, res) => {
+    const date = z.string().regex(DATE_RE).parse(req.query.date);
+    res.json({ text: await buildWhatsappText(date) });
   }),
 );
 

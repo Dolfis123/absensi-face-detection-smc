@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { currentUser, requireRole } from '../middleware/auth';
 import { leaveAttachmentUpload } from '../middleware/upload';
 import { AttendanceIssue, EmployeeSchedule, Holiday, LEAVE_TYPES, LeaveRequest, Shift } from '../models';
+import { getPosts, postLabel } from '../services/placement';
 import { buildRecap } from '../services/recapService';
 import { ah, HttpError } from '../utils/http';
 import { addDays, DATE_RE, MONTH_RE, monthRange, witNow } from '../utils/time';
@@ -30,13 +31,14 @@ router.get(
     const today = witNow().date;
     const from = z.string().regex(DATE_RE).default(today).parse(req.query.from);
     const to = z.string().regex(DATE_RE).default(addDays(today, 13)).parse(req.query.to);
-    const [schedules, holidays] = await Promise.all([
+    const [schedules, holidays, posts] = await Promise.all([
       EmployeeSchedule.findAll({
         where: { userId: currentUser(req).id, date: { [Op.between]: [from, to] } },
         include: [{ model: Shift, as: 'shift' }],
         order: [['date', 'ASC']],
       }),
       Holiday.findAll({ where: { date: { [Op.between]: [from, to] } } }),
+      getPosts(),
     ]);
     res.json({
       from,
@@ -44,6 +46,7 @@ router.get(
       schedules: schedules.map((s) => ({
         date: s.date,
         off: s.shiftId === null,
+        post: postLabel(posts, s.post),
         shift: s.shift && { id: s.shift.id, name: s.shift.name, startTime: s.shift.startTime, endTime: s.shift.endTime },
       })),
       holidays,

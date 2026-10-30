@@ -1,6 +1,6 @@
 # SMC-FaceAttend
 
-Sistem Absensi Wajah & Geofencing — Pos Parkir Mal SMC (Sorong Mega Mall), Kota Sorong, Papua Barat Daya.
+Sistem Absensi Wajah & Geofencing — Pos Parkir Mall Sorong Modern City (SMC), Kota Sorong, Papua Barat Daya.
 
 ```
 smc-faceattend/

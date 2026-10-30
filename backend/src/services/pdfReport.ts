@@ -156,7 +156,7 @@ export function sendAttendancePdf(res: Response, recap: EmployeeRecap[], meta: P
   // ── Kop laporan ──
   doc.rect(0, 0, pageW, 78).fill(C.brandDark);
   doc.font('Helvetica-Bold').fontSize(18).fillColor('#ffffff').text(meta.title, MARGIN, 20);
-  doc.font('Helvetica').fontSize(9.5).fillColor('#bcdaff').text('Pos Parkir Mal SMC (Sorong Mega Mall) · Kota Sorong, Papua Barat Daya', MARGIN, 44);
+  doc.font('Helvetica').fontSize(9.5).fillColor('#bcdaff').text('Pos Parkir Mall Sorong Modern City (SMC) · Kota Sorong, Papua Barat Daya', MARGIN, 44);
   doc.font('Helvetica-Bold').fontSize(11).fillColor('#ffffff').text(meta.period, MARGIN, 24, { width: pageW - MARGIN * 2, align: 'right' });
   doc.font('Helvetica').fontSize(8).fillColor('#bcdaff').text(`Dicetak ${printedAt} oleh ${meta.generatedBy}`, MARGIN, 44, { width: pageW - MARGIN * 2, align: 'right' });
   doc.y = 96;

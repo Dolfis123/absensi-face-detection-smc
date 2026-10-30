@@ -1,6 +1,7 @@
 import { Op, QueryTypes } from 'sequelize';
 import { AppSetting, RosterRule, Shift, ShiftBreak, ShiftSlot, User, sequelize } from './models';
-import { hhmmToMinutes, minutesToHhmm, witNow } from './utils/time';
+import { rebalancePlacements } from './services/placement';
+import { addDays, hhmmToMinutes, minutesToHhmm, witNow } from './utils/time';
 
 /**
  * Migrasi skema untuk database yang SUDAH berjalan (mis. di VPS).
@@ -83,6 +84,20 @@ const MIGRATIONS: { id: string; up: () => Promise<void> }[] = [
       }
     },
   },  {
+    id: '2026-10-30-penempatan-pos',
+    async up() {
+      // Kolom pos penempatan (plotting) pada roster
+      const rows = await sequelize.query(
+        "SELECT 1 FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'employee_schedules' AND COLUMN_NAME = 'post'",
+        { type: QueryTypes.SELECT },
+      );
+      if (rows.length === 0) await sequelize.query('ALTER TABLE `employee_schedules` ADD COLUMN `post` VARCHAR(20) NULL DEFAULT NULL');
+      // Roster yang sudah tersimpan langsung mendapat penempatan, mulai hari ini
+      const today = witNow().date;
+      await rebalancePlacements(today, addDays(today, 120));
+    },
+  },
+  {
     id: '2026-10-30-aturan-roster-smc',
     async up() {
       // Aturan roster yang sudah disepakati untuk Pos Parkir Mal SMC. Hanya diisi bila aturan orang itu
