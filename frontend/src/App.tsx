@@ -74,11 +74,11 @@ export default function App() {
         <Route path="review-kendala" element={<Guard roles={REVIEWERS}><ReviewKendala /></Guard>} />
         <Route path="karyawan" element={<Guard roles={ADMIN}><Karyawan /></Guard>} />
         <Route path="roster" element={<Guard roles={REVIEWERS}><Roster /></Guard>} />
-        <Route path="roster-otomatis" element={<Guard roles={REVIEWERS}><RosterOtomatis /></Guard>} />
+        <Route path="roster-otomatis" element={<Guard roles={ADMIN}><RosterOtomatis /></Guard>} />
         <Route path="koreksi" element={<Guard roles={ADMIN}><Koreksi /></Guard>} />
         <Route path="libur" element={<Guard roles={ADMIN}><Libur /></Guard>} />
         <Route path="geofence" element={<Guard roles={ADMIN}><Geofence /></Guard>} />
-        <Route path="pengaturan-shift" element={<Guard roles={REVIEWERS}><PengaturanShift /></Guard>} />
+        <Route path="pengaturan-shift" element={<Guard roles={ADMIN}><PengaturanShift /></Guard>} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

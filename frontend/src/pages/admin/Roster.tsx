@@ -5,6 +5,7 @@ import { RosterDownloadButtons } from '../../components/RosterDownload';
 import { WhatsappDayButton } from '../../components/WhatsappDay';
 import { Alert, Button, Card, Field, Loading, PageHeader, Select } from '../../components/ui';
 import { api, errMsg, Holiday, Role, Shift } from '../../lib/api';
+import { useAuth } from '../../lib/auth';
 import { addDays, fmtDate, mondayOf, shortDay, todayWIT } from '../../lib/format';
 
 interface RosterResponse {
@@ -23,6 +24,7 @@ const OFF_CLS = 'bg-slate-600 text-white';
 const EMPTY_CLS = 'bg-white text-slate-400';
 
 export default function Roster() {
+  const { user } = useAuth();
   const today = todayWIT();
   const [weekStart, setWeekStart] = useState(mondayOf(today));
   const weekEnd = addDays(weekStart, 6);
@@ -106,11 +108,11 @@ export default function Roster() {
         subtitle={`Klik sel untuk mengganti: kosong → ${shifts.map((s) => s.name).join(' → ')} → Off. Tanggal yang sudah lewat terkunci.`}
         actions={
           <>
-
-            {/* <Link to="/app/roster-otomatis"> 
-              <Button icon="sparkles">Roster Otomatis</Button>
-            </Link>
-*/}
+            {user?.role === 'SUPER_ADMIN' && (
+              <Link to="/app/roster-otomatis">
+                <Button icon="sparkles">Roster Otomatis</Button>
+              </Link>
+            )}
             <Button variant="secondary" onClick={() => setWeekStart(addDays(weekStart, -7))}>
               ‹ Minggu lalu
             </Button>

@@ -19,6 +19,8 @@ import { addDays, DATE_RE, eachDate, witNow } from '../utils/time';
  */
 const router = Router();
 router.use(requireRole('SUPER_ADMIN', 'KOORDINATOR'));
+// Pengaturan Shift dan Roster Otomatis khusus Super Admin; Koordinator cukup Roster Shift + unduh/teks WA
+const adminOnly = requireRole('SUPER_ADMIN');
 
 // ─────────────── Roster shift dinamis ───────────────
 const rangeQuery = z
@@ -135,6 +137,7 @@ const breakSchema = z.object({
 
 router.get(
   '/shift-settings',
+  adminOnly,
   ah(async (_req, res) => {
     const [shifts, logs] = await Promise.all([
       loadShifts(),
@@ -150,6 +153,7 @@ router.get(
 
 router.put(
   '/shifts/:id',
+  adminOnly,
   ah(async (req, res) => {
     const body = z
       .object({
@@ -185,6 +189,7 @@ router.put(
 
 router.put(
   '/settings/late-tolerance',
+  adminOnly,
   ah(async (req, res) => {
     const { minutes } = z.object({ minutes: z.number().int().min(0).max(240) }).parse(req.body);
     // Toleransi baru tidak boleh membuat jendela Masuk bertabrakan dengan slot berikutnya di shift mana pun
@@ -242,6 +247,7 @@ async function loadRules() {
 
 router.get(
   '/roster/rules',
+  adminOnly,
   ah(async (_req, res) => {
     const { rows, shifts, s1, s2 } = await loadRules();
     res.json({
@@ -255,6 +261,7 @@ router.get(
 
 router.put(
   '/roster/rules/:userId',
+  adminOnly,
   ah(async (req, res) => {
     const body = z
       .object({
@@ -281,6 +288,7 @@ router.put(
 /** Membuat pratinjau roster (belum disimpan). Simpan lewat PUT /schedules. */
 router.post(
   '/roster/generate',
+  adminOnly,
   ah(async (req, res) => {
     const body = z
       .object({
@@ -357,6 +365,7 @@ router.post(
 // ─────────────── Pos penempatan (plotting) ───────────────
 router.get(
   '/roster/posts',
+  adminOnly,
   ah(async (_req, res) => {
     res.json({ posts: await getPosts(), defaults: DEFAULT_POSTS });
   }),
@@ -364,6 +373,7 @@ router.get(
 
 router.put(
   '/roster/posts',
+  adminOnly,
   ah(async (req, res) => {
     const { posts } = z
       .object({
