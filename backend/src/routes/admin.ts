@@ -288,8 +288,8 @@ router.put(
         name: z.string().trim().min(3).max(120),
         latitude: z.number().min(-90).max(90),
         longitude: z.number().min(-180).max(180),
-        radiusMeters: z.number().min(1).max(500),
-        maxAccuracyMeters: z.number().min(1).max(500),
+        radiusMeters: z.number().min(1).max(50000),
+        maxAccuracyMeters: z.number().min(1).max(50000),
       })
       .parse(req.body);
     const [geo] = await GeofenceSetting.upsert({ id: 1, ...body });
