@@ -65,8 +65,8 @@ export const NAV_GROUPS: Record<Role, NavGroup[]> = {
       title: 'Jadwal',
       items: [
         { to: '/app/roster', label: 'Roster Shift', icon: 'calendar' },
-        { to: '/app/roster-otomatis', label: 'Roster Otomatis', icon: 'sparkles' },
-        { to: '/app/pengaturan-shift', label: 'Pengaturan Shift', icon: 'clock' },
+        // { to: '/app/roster-otomatis', label: 'Roster Otomatis', icon: 'sparkles' },
+        // { to: '/app/pengaturan-shift', label: 'Pengaturan Shift', icon: 'clock' },
       ],
     },
     { title: 'Laporan', items: [{ to: '/app/laporan', label: 'Rekap & Unduh', icon: 'download' }] },
