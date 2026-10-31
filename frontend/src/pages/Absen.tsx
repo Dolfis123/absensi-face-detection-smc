@@ -3,7 +3,8 @@ import { Link } from 'react-router-dom';
 import { Camera, CameraHandle } from '../components/Camera';
 import { Button } from '../components/ui';
 import { api, ApiError, errMsg, Geofence, SlotType } from '../lib/api';
-import { fmtMinutes, haversine, SLOT_LABEL, STATUS_STYLE } from '../lib/format';
+import { fmtMinutes, SLOT_LABEL, STATUS_STYLE } from '../lib/format';
+// haversine
 
 interface CheckResult {
   message: string;
@@ -91,9 +92,9 @@ export default function Absen() {
     return () => clearTimeout(t);
   }, [result, error]);
 
-  const distance = geo && pos ? haversine(geo.latitude, geo.longitude, pos.latitude, pos.longitude) : null;
-  const inside = distance !== null && geo !== null && distance <= geo.radiusMeters;
-  const accurate = pos !== null && geo !== null && pos.accuracy <= geo.maxAccuracyMeters;
+  // const distance = geo && pos ? haversine(geo.latitude, geo.longitude, pos.latitude, pos.longitude) : null;
+  // const inside = distance !== null && geo !== null && distance <= geo.radiusMeters;
+  // const accurate = pos !== null && geo !== null && pos.accuracy <= geo.maxAccuracyMeters;
 
   async function send(image: string, position: Position, pinCode?: string) {
     setSubmitting(true);
