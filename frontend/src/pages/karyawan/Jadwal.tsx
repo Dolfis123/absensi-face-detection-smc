@@ -66,7 +66,7 @@ export default function Jadwal() {
             </ul>
           )}
         </Card>
-        <Card>
+        {/* <Card>
           <h2 className="mb-3 font-semibold">Jendela Absensi (WIT)</h2>
           {shifts.map((s) => (
             <div key={s.id} className="mb-4">
@@ -88,7 +88,7 @@ export default function Jadwal() {
               </ul>
             </div>
           ))}
-        </Card>
+        </Card> */}
       </div>
     </>
   );
