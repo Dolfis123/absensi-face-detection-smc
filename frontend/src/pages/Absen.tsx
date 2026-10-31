@@ -150,7 +150,7 @@ export default function Absen() {
 
         <Camera ref={camera} />
 
-        <div className="grid grid-cols-2 gap-2 text-sm">
+        {/* <div className="grid grid-cols-2 gap-2 text-sm">
           <div className={`rounded-xl p-3 ${inside ? 'bg-emerald-500/20 text-emerald-200' : 'bg-rose-500/20 text-rose-200'}`}>
             <div className="text-xs opacity-80">Jarak ke pos</div>
             <div className="text-lg font-bold">
@@ -162,7 +162,7 @@ export default function Absen() {
             <div className="text-xs opacity-80">Akurasi GPS</div>
             <div className="text-lg font-bold">{pos ? `±${Math.round(pos.accuracy)} m` : '—'}</div>
           </div>
-        </div>
+        </div> */}
         {gpsError && <p className="text-center text-sm text-amber-300">{gpsError}</p>}
         <p className="text-center text-xs text-slate-400">
           Posisikan wajah di dalam oval, lepaskan masker/kacamata hitam, pastikan hanya satu orang di depan kamera.
