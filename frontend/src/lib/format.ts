@@ -97,30 +97,3 @@ export function haversine(lat1: number, lon1: number, lat2: number, lon2: number
   const a = Math.sin(r(lat2 - lat1) / 2) ** 2 + Math.cos(r(lat1)) * Math.cos(r(lat2)) * Math.sin(r(lon2 - lon1) / 2) ** 2;
   return 2 * 6_371_000 * Math.asin(Math.sqrt(a));
 }
-
-/**
- * Warna roster (sama dengan PDF & Excel): S1 kuning, S2 biru tua, PENUH ungu, OFF merah bergaris silang.
- * Warna menutup seluruh kotak supaya terbaca dari jauh dan tetap beda saat dicetak hitam-putih.
- */
-export function shiftColorCls(code?: string) {
-  switch (code) {
-    case 'SHIFT_1':
-      return 'bg-[#FACC15] text-gray-900';
-    case 'SHIFT_2':
-      return 'bg-[#1D4ED8] text-white';
-    case 'SHIFT_PENUH':
-      return 'bg-[#7C3AED] text-white';
-    default:
-      return 'bg-orange-500 text-white';
-  }
-}
-export const OFF_CLS = 'bg-[#DC2626] text-white';
-export const EMPTY_CLS = 'bg-white text-slate-400 ring-1 ring-inset ring-slate-200';
-/** Garis silang putih untuk sel OFF */
-export const OFF_STYLE = {
-  backgroundImage:
-    'linear-gradient(to top right, transparent calc(50% - 0.75px), rgba(255,255,255,.55) 50%, transparent calc(50% + 0.75px)),' +
-    'linear-gradient(to top left, transparent calc(50% - 0.75px), rgba(255,255,255,.55) 50%, transparent calc(50% + 0.75px))',
-};
-/** Singkatan shift untuk sel roster: S1, S2, PENUH */
-export const shiftShort = (s: { code: string; name: string }) => (s.code === 'SHIFT_PENUH' ? 'PENUH' : s.name.replace(/^Shift\s*/i, 'S').toUpperCase());
