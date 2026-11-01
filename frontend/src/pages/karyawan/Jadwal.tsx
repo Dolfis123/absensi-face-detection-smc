@@ -1,7 +1,7 @@
 import { useLoad } from '../../components/attendance';
 import { Alert, Badge, Card, Empty, Loading, PageHeader } from '../../components/ui';
 import { api, Holiday, Shift } from '../../lib/api';
-import { addDays, fmtDate, todayWIT } from '../../lib/format';
+import { addDays, fmtDate, OFF_CLS, shiftColorCls, todayWIT } from '../../lib/format';
 
 interface ScheduleResponse {
   schedules: { date: string; off: boolean; post: string | null; shift: { id: number; name: string; startTime: string; endTime: string } | null }[];
@@ -24,8 +24,7 @@ export default function Jadwal() {
   const postByDate = new Map(sched.schedules.map((s) => [s.date, s.post]));
   const offDates = new Set(sched.schedules.filter((s) => s.off).map((s) => s.date));
   const holidays = new Map(sched.holidays.map((h) => [h.date, h.name]));
-  const SHIFT_BADGE = ['bg-sky-100 text-sky-800', 'bg-violet-100 text-violet-800', 'bg-teal-100 text-teal-800', 'bg-amber-100 text-amber-800'];
-  const shiftBadge = (id: number) => SHIFT_BADGE[Math.max(0, shifts.findIndex((s) => s.id === id)) % SHIFT_BADGE.length];
+  const shiftBadge = (id: number) => shiftColorCls(shifts.find((s) => s.id === id)?.code);
   const days = Array.from({ length: 14 }, (_, i) => addDays(today, i));
 
   return (
@@ -46,7 +45,7 @@ export default function Jadwal() {
                   {holidays.has(d) ? (
                     <Badge className="bg-slate-200 text-slate-700">Libur · {holidays.get(d)}</Badge>
                   ) : offDates.has(d) ? (
-                    <Badge className="bg-slate-600 text-white">Off (libur)</Badge>
+                    <Badge className={OFF_CLS}>OFF (libur)</Badge>
                   ) : shift ? (
                     <span className="text-right">
                       <Badge className={shiftBadge(shift.id)}>
