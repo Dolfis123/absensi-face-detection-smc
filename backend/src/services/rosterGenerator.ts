@@ -83,9 +83,13 @@ export function generateRoster(employees: GenEmployee[], opt: GenOptions): GenRe
     const offOn = new Map<string, number[]>(weekDates.map((d) => [d, []]));
     // Yang pilihan hari Off-nya paling sedikit dipilihkan lebih dulu; sisanya diacak tiap minggu
     const order = [...employees].sort((a, b) => a.offDays.length - b.offDays.length || jitter(a.id, w) - jitter(b.id, w));
+    // Batas keras jumlah orang Off per hari (mis. 14 orang × 1 Off ÷ 7 hari = 2), supaya tidak ada hari yang kekurangan orang
+    const cap = Math.ceil((employees.filter((e) => e.offDays.length > 0).length * opt.offPerWeek) / Math.max(1, weekDates.length));
     for (const e of order) {
       for (let k = 0; k < opt.offPerWeek; k++) {
-        const options = weekDates.filter((d) => e.offDays.includes(weekday(d)) && cells.get(e.id)!.get(d) !== 'OFF');
+        const allowed = weekDates.filter((d) => e.offDays.includes(weekday(d)) && cells.get(e.id)!.get(d) !== 'OFF');
+        const underCap = allowed.filter((d) => offOn.get(d)!.length < cap);
+        const options = underCap.length > 0 ? underCap : allowed;
         if (options.length === 0) {
           warnings.push(`${e.name}: tidak ada hari yang boleh Off pada minggu ke-${w + 1}`);
           break;

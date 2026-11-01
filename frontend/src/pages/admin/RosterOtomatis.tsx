@@ -5,7 +5,7 @@ import { useFeedback } from '../../components/feedback';
 import { RosterDownloadButtons } from '../../components/RosterDownload';
 import { Alert, Badge, Button, Card, cx, Field, Input, Loading, Modal, PageHeader, Select, Table, Td, Th } from '../../components/ui';
 import { api, errMsg, Role } from '../../lib/api';
-import { addDays, fmtDate, mondayOf, shortDay, todayWIT } from '../../lib/format';
+import { addDays, EMPTY_CLS, fmtDate, mondayOf, OFF_CLS, OFF_STYLE, shiftColorCls, shortDay, todayWIT } from '../../lib/format';
 
 interface Rule {
   userId: number;
@@ -240,16 +240,7 @@ export default function RosterOtomatis() {
     }
   }
 
-  const cellCls = (v: Cell) =>
-    v === 'OFF'
-      ? 'bg-slate-600 text-white'
-      : v === data.shift1Id
-        ? 'bg-sky-100 text-sky-800'
-        : v === data.shift2Id
-          ? 'bg-violet-100 text-violet-800'
-          : v === null
-            ? 'bg-white text-slate-300'
-            : 'bg-teal-100 text-teal-800';
+  const cellCls = (v: Cell) => (v === 'OFF' ? OFF_CLS : v === null ? EMPTY_CLS : shiftColorCls(shiftById.get(v)?.code));
   const cellText = (v: Cell) => (v === 'OFF' ? 'Off' : v === data.shift1Id ? '1' : v === data.shift2Id ? '2' : v === null ? '·' : 'P');
 
   return (
@@ -442,7 +433,7 @@ export default function RosterOtomatis() {
                         const monday = new Date(`${preview.dates[i]}T00:00:00Z`).getUTCDay() === 1;
                         return (
                           <td key={i} className={cx('p-0.5', monday && 'border-l border-slate-200')}>
-                            <div className={cx('flex h-9 w-8 flex-col items-center justify-center rounded-md font-semibold leading-none', cellCls(v))}>
+                            <div style={v === 'OFF' ? OFF_STYLE : undefined} className={cx('flex h-9 w-8 flex-col items-center justify-center rounded font-extrabold leading-none', cellCls(v))}>
                               {cellText(v)}
                               {post && <span className="mt-0.5 text-[9px] font-medium opacity-75">{post}</span>}
                             </div>

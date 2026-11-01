@@ -6,7 +6,7 @@ import { WhatsappDayButton } from '../../components/WhatsappDay';
 import { Alert, Button, Card, Field, Loading, PageHeader, Select } from '../../components/ui';
 import { api, errMsg, Holiday, Role, Shift } from '../../lib/api';
 import { useAuth } from '../../lib/auth';
-import { addDays, fmtDate, mondayOf, shortDay, todayWIT } from '../../lib/format';
+import { addDays, EMPTY_CLS, fmtDate, mondayOf, OFF_CLS, OFF_STYLE, shiftColorCls, shiftShort, shortDay, todayWIT } from '../../lib/format';
 
 interface RosterResponse {
   employees: { id: number; fullName: string; nik: string; role: Role; defaultShiftId: number | null }[];
@@ -19,9 +19,6 @@ interface RosterResponse {
 type Cell = number | 'OFF' | null;
 
 const key = (u: number, d: string) => `${u}|${d}`;
-const SHIFT_CLS = ['bg-sky-100 text-sky-800', 'bg-violet-100 text-violet-800', 'bg-teal-100 text-teal-800', 'bg-amber-100 text-amber-800'];
-const OFF_CLS = 'bg-slate-600 text-white';
-const EMPTY_CLS = 'bg-white text-slate-400';
 
 export default function Roster() {
   const { user } = useAuth();
@@ -97,9 +94,46 @@ export default function Roster() {
     }
   }
 
-  const cellCls = (v: Cell) =>
-    v === 'OFF' ? OFF_CLS : v === null ? EMPTY_CLS : SHIFT_CLS[Math.max(0, shifts.findIndex((s) => s.id === v)) % SHIFT_CLS.length];
-  const cellText = (v: Cell) => (v === 'OFF' ? 'Off' : v === null ? '—' : (shifts.find((s) => s.id === v)?.name ?? '?'));
+  const shiftOf = (id: number) => shifts.find((s) => s.id === id);
+  const cellCls = (v: Cell) => (v === 'OFF' ? OFF_CLS : v === null ? EMPTY_CLS : shiftColorCls(shiftOf(v)?.code));
+  const cellText = (v: Cell) => (v === 'OFF' ? 'OFF' : v === null ? '—' : shiftOf(v) ? shiftShort(shiftOf(v)!) : '?');
+
+  // Keterangan warna di ATAS tabel supaya langsung terbaca
+  const legend = (
+    <div className="mb-4 space-y-2 text-xs text-slate-700">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+        {shifts.map((s) => (
+          <span key={s.id} className="flex items-center gap-1.5">
+            <span className={`flex h-6 w-12 items-center justify-center rounded text-[11px] font-extrabold ${shiftColorCls(s.code)}`}>{shiftShort(s)}</span>
+            {s.name} ({s.startTime}–{s.endTime})
+          </span>
+        ))}
+        <span className="flex items-center gap-1.5">
+          <span className={`flex h-6 w-12 items-center justify-center rounded text-[11px] font-extrabold ${OFF_CLS}`} style={OFF_STYLE}>
+            OFF
+          </span>
+          Off / libur pribadi (tidak dihitung Alfa)
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className={`flex h-6 w-12 items-center justify-center rounded text-[11px] font-bold ${EMPTY_CLS}`}>—</span>
+          Belum dijadwalkan
+        </span>
+      </div>
+      {roster.posts.length > 0 && (
+        <div className="flex flex-wrap gap-x-4 gap-y-1 text-slate-600">
+          <span className="font-semibold">Pos (kode kecil di bawah shift, digilir otomatis):</span>
+          {roster.posts.map((p) => (
+            <span key={p.code}>
+              <b>{p.code}</b> {p.area} — {p.name}
+            </span>
+          ))}
+          <span>
+            <b>CAD</b> Cadangan
+          </span>
+        </div>
+      )}
+    </div>
+  );
 
   return (
     <>
@@ -131,6 +165,7 @@ export default function Roster() {
         </div>
       )}
       <Card>
+        {legend}
         <div className="-mx-4 overflow-x-auto sm:mx-0">
           <table className="min-w-full text-sm">
             <thead>
@@ -165,13 +200,14 @@ export default function Roster() {
                         <button
                           onClick={() => cycle(e.id, d)}
                           disabled={past}
-                          className={`h-10 w-full min-w-[5rem] rounded-lg px-1 text-xs font-semibold ring-1 ring-slate-200 ${cellCls(v)} ${
-                            changed ? 'ring-2 ring-amber-400' : ''
-                          } ${past ? 'cursor-not-allowed opacity-60' : 'hover:ring-brand-500'}`}
+                          style={v === 'OFF' ? OFF_STYLE : undefined}
+                          className={`flex h-12 w-full min-w-[5rem] flex-col items-center justify-center rounded-md px-1 text-base font-extrabold leading-none ${cellCls(v)} ${
+                            changed ? 'ring-4 ring-amber-400 ring-offset-1' : ''
+                          } ${past ? 'cursor-not-allowed opacity-60' : 'hover:brightness-110'}`}
                         >
                           {cellText(v)}
                           {!changed && typeof v === 'number' && postOf.get(key(e.id, d)) && (
-                            <div className="text-[10px] font-medium opacity-70">{postOf.get(key(e.id, d))}</div>
+                            <div className="mt-1 text-[10px] font-semibold opacity-80">{postOf.get(key(e.id, d))}</div>
                           )}
                         </button>
                       </td>
@@ -182,34 +218,6 @@ export default function Roster() {
             </tbody>
           </table>
         </div>
-        <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-slate-600">
-          {shifts.map((s) => (
-            <span key={s.id} className="flex items-center gap-1.5">
-              <span className={`h-3 w-5 rounded ${cellCls(s.id)}`} />
-              {s.name} ({s.startTime}–{s.endTime})
-            </span>
-          ))}
-          <span className="flex items-center gap-1.5">
-            <span className={`h-3 w-5 rounded ${OFF_CLS}`} />
-            Off (libur pribadi, tidak dihitung Alfa)
-          </span>
-          <span className="flex items-center gap-1.5">
-            <span className="h-3 w-5 rounded bg-white ring-1 ring-slate-300" />— belum dijadwalkan
-          </span>
-        </div>
-        {roster.posts.length > 0 && (
-          <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-600">
-            <span className="font-semibold">Pos penempatan (kode kecil di sel, digilir otomatis):</span>
-            {roster.posts.map((p) => (
-              <span key={p.code}>
-                <b>{p.code}</b> {p.area} — {p.name}
-              </span>
-            ))}
-            <span>
-              <b>CAD</b> Cadangan
-            </span>
-          </div>
-        )}
         <div className="mt-4 flex flex-wrap justify-end gap-2">
           <Button variant="secondary" onClick={fillDefault} title="Hari yang sudah ditandai Off atau sudah berisi shift tidak diubah">
             Isi yang kosong dari shift default
