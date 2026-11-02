@@ -3,6 +3,7 @@ import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
 import { api, AttendanceIssue, LeaveRequest, Role } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { useServerClock } from '../lib/clock';
+import { useParkingSettings } from '../lib/parking';
 import { ROLE_LABEL } from '../lib/format';
 import { Icon, IconName } from './icons';
 import { Avatar, cx } from './ui';
@@ -221,9 +222,19 @@ export function Layout() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [collapsed, toggleCollapsed] = useCollapsed();
   const { pathname } = useLocation();
+  const parking = useParkingSettings();
   if (!user) return null;
 
-  const groups = NAV_GROUPS[user.role];
+  // Menu operasional parkir muncul hanya bila modulnya aktif (Super Admin selalu, untuk menyiapkan)
+  const parkingOn = !!parking && (parking.karcisEnabled || parking.kejadianEnabled);
+  const groups: NavGroup[] =
+    user.role === 'KARYAWAN'
+      ? parkingOn
+        ? [...NAV_GROUPS.KARYAWAN, { title: 'Operasional', items: [{ to: '/app/operasional', label: 'Operasional Parkir', icon: 'car', short: 'Parkir' }] }]
+        : NAV_GROUPS.KARYAWAN
+      : parkingOn || user.role === 'SUPER_ADMIN'
+        ? [...NAV_GROUPS[user.role], { title: 'Operasional Parkir', items: [{ to: '/app/parkir', label: 'Karcis & Kejadian', icon: 'car' }] }]
+        : NAV_GROUPS[user.role];
   const items = groups.flatMap((g) => g.items.map((i) => ({ ...i, group: g.title })));
   const current = items.find((i) => pathname.startsWith(i.to));
   const isEmployee = user.role === 'KARYAWAN';
@@ -358,7 +369,7 @@ export function Layout() {
 
       {isEmployee && (
         <nav className="fixed inset-x-0 bottom-0 z-30 border-t border-slate-200 bg-white/95 pb-[env(safe-area-inset-bottom)] backdrop-blur lg:hidden">
-          <div className="grid grid-cols-5">
+          <div className="grid" style={{ gridTemplateColumns: `repeat(${items.length}, minmax(0, 1fr))` }}>
             {items.map((it) => (
               <NavLink
                 key={it.to}

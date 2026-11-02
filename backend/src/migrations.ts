@@ -98,6 +98,17 @@ const MIGRATIONS: { id: string; up: () => Promise<void> }[] = [
     },
   },
   {
+    id: '2026-11-02-app-settings-text',
+    async up() {
+      // Daftar pos penempatan & pengaturan parkir disimpan sebagai JSON yang bisa > 255 karakter
+      const rows = await sequelize.query<{ DATA_TYPE: string }>(
+        "SELECT DATA_TYPE FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'app_settings' AND COLUMN_NAME = 'value'",
+        { type: QueryTypes.SELECT },
+      );
+      if (rows[0] && rows[0].DATA_TYPE !== 'text') await sequelize.query('ALTER TABLE `app_settings` MODIFY `value` TEXT NOT NULL');
+    },
+  },
+  {
     id: '2026-10-30-aturan-roster-smc',
     async up() {
       // Aturan roster yang sudah disepakati untuk Pos Parkir Mal SMC. Hanya diisi bila aturan orang itu

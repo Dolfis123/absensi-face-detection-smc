@@ -14,6 +14,8 @@ import Libur from './pages/admin/Libur';
 import PengaturanShift from './pages/admin/PengaturanShift';
 import Roster from './pages/admin/Roster';
 import RosterOtomatis from './pages/admin/RosterOtomatis';
+import OperasionalPengelola from './pages/parkir/Pengelola';
+import OperasionalPetugas from './pages/parkir/Petugas';
 import BerandaKaryawan from './pages/karyawan/Beranda';
 import Izin from './pages/karyawan/Izin';
 import Jadwal from './pages/karyawan/Jadwal';
@@ -79,6 +81,8 @@ export default function App() {
         <Route path="libur" element={<Guard roles={ADMIN}><Libur /></Guard>} />
         <Route path="geofence" element={<Guard roles={ADMIN}><Geofence /></Guard>} />
         <Route path="pengaturan-shift" element={<Guard roles={ADMIN}><PengaturanShift /></Guard>} />
+        <Route path="operasional" element={<Guard roles={['KARYAWAN']}><OperasionalPetugas /></Guard>} />
+        <Route path="parkir" element={<Guard roles={REVIEWERS}><OperasionalPengelola /></Guard>} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

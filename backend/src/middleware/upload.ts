@@ -27,3 +27,20 @@ export const leaveAttachmentUpload = multer({
     cb(null, true);
   },
 });
+
+/** Foto bukti setoran & laporan kejadian (operasional parkir). */
+export const parkingUploadDir = path.resolve(env.uploadDir, 'parking');
+fs.mkdirSync(parkingUploadDir, { recursive: true });
+const IMAGES = new Set(['image/jpeg', 'image/png', 'image/webp']);
+
+export const parkingPhotoUpload = multer({
+  storage: multer.diskStorage({
+    destination: parkingUploadDir,
+    filename: (_req, file, cb) => cb(null, `${randomUUID()}${EXT[file.mimetype]}`),
+  }),
+  limits: { fileSize: 5 * 1024 * 1024, files: 3 },
+  fileFilter: (_req, file, cb) => {
+    if (!IMAGES.has(file.mimetype)) return cb(new HttpError(400, 'Foto harus JPG, PNG, atau WEBP'));
+    cb(null, true);
+  },
+});

@@ -433,7 +433,7 @@ export class AppSetting extends Model<InferAttributes<AppSetting>, InferCreation
 AppSetting.init(
   {
     key: { type: DataTypes.STRING(60), primaryKey: true },
-    value: { type: DataTypes.STRING(255), allowNull: false },
+    value: { type: DataTypes.TEXT, allowNull: false },
     updatedAt: DataTypes.DATE,
   },
   { sequelize, tableName: 'app_settings', createdAt: false },
@@ -534,5 +534,264 @@ LeaveRequest.belongsTo(User, { foreignKey: 'reviewedById', as: 'reviewedBy' });
 
 AttendanceIssue.belongsTo(User, { foreignKey: 'userId', as: 'user' });
 AttendanceIssue.belongsTo(User, { foreignKey: 'reviewedById', as: 'reviewedBy' });
+
+// ───────────────────────────── Operasional parkir (karcis, setoran, serah terima, kejadian) ─────────────────────────────
+// Modul ini disembunyikan sampai diaktifkan Super Admin di Pengaturan Parkir.
+// Fungsi (bukan objek bersama): Sequelize mengubah objek definisi kolom, jadi tiap kolom perlu salinannya sendiri
+const userRef = () => ({ type: DataTypes.INTEGER.UNSIGNED, allowNull: false, references: { model: 'users', key: 'id' } });
+const count = () => ({ type: DataTypes.INTEGER.UNSIGNED, allowNull: false, defaultValue: 0 });
+
+export const TICKET_TYPES = ['MOBIL', 'MOTOR'] as const;
+export type TicketType = (typeof TICKET_TYPES)[number];
+
+/** Laporan per jam dari petugas: kendaraan masuk/keluar dan karcis terpakai (SOP 6.3). */
+export class HourlyReport extends Model<InferAttributes<HourlyReport>, InferCreationAttributes<HourlyReport>> {
+  declare id: CreationOptional<number>;
+  declare userId: number;
+  declare date: string;
+  declare hour: number; // jam awal, 0–23 (mis. 9 = laporan 09.00–10.00)
+  declare post: string | null;
+  declare carIn: number;
+  declare motorIn: number;
+  declare carOut: number;
+  declare motorOut: number;
+  declare ticketCar: number;
+  declare ticketMotor: number;
+  declare rateCar: number; // tarif saat laporan dibuat
+  declare rateMotor: number;
+  declare note: string | null;
+  declare createdAt: CreationOptional<Date>;
+  declare updatedAt: CreationOptional<Date>;
+}
+HourlyReport.init(
+  {
+    id: { type: DataTypes.INTEGER.UNSIGNED, autoIncrement: true, primaryKey: true },
+    userId: userRef(),
+    date: { type: DataTypes.DATEONLY, allowNull: false },
+    hour: { type: DataTypes.TINYINT.UNSIGNED, allowNull: false },
+    post: { type: DataTypes.STRING(20), allowNull: true },
+    carIn: count(),
+    motorIn: count(),
+    carOut: count(),
+    motorOut: count(),
+    ticketCar: count(),
+    ticketMotor: count(),
+    rateCar: count(),
+    rateMotor: count(),
+    note: { type: DataTypes.STRING(500), allowNull: true },
+    createdAt: DataTypes.DATE,
+    updatedAt: DataTypes.DATE,
+  },
+  { sequelize, tableName: 'parking_hourly_reports', indexes: [{ unique: true, fields: ['user_id', 'date', 'hour'] }, { fields: ['date'] }] },
+);
+
+/** Karcis yang diterima dari Manajemen, per rentang nomor seri (SOP 6.6). */
+export class TicketBatch extends Model<InferAttributes<TicketBatch>, InferCreationAttributes<TicketBatch>> {
+  declare id: CreationOptional<number>;
+  declare type: TicketType;
+  declare serialFrom: number;
+  declare serialTo: number;
+  declare receivedDate: string;
+  declare note: string | null;
+  declare recordedById: number;
+  declare createdAt: CreationOptional<Date>;
+}
+TicketBatch.init(
+  {
+    id: { type: DataTypes.INTEGER.UNSIGNED, autoIncrement: true, primaryKey: true },
+    type: { type: DataTypes.ENUM(...TICKET_TYPES), allowNull: false },
+    serialFrom: { type: DataTypes.INTEGER.UNSIGNED, allowNull: false },
+    serialTo: { type: DataTypes.INTEGER.UNSIGNED, allowNull: false },
+    receivedDate: { type: DataTypes.DATEONLY, allowNull: false },
+    note: { type: DataTypes.STRING(300), allowNull: true },
+    recordedById: userRef(),
+    createdAt: DataTypes.DATE,
+  },
+  { sequelize, tableName: 'parking_ticket_batches', updatedAt: false },
+);
+
+export const VOID_REASONS = ['BATAL', 'HILANG'] as const;
+/** Karcis rusak/salah cetak (BATAL) atau hilang, dicatat per nomor seri (SOP 6.6.3–4). */
+export class TicketVoid extends Model<InferAttributes<TicketVoid>, InferCreationAttributes<TicketVoid>> {
+  declare id: CreationOptional<number>;
+  declare type: TicketType;
+  declare serial: string;
+  declare reason: (typeof VOID_REASONS)[number];
+  declare date: string;
+  declare note: string | null;
+  declare userId: number;
+  declare createdAt: CreationOptional<Date>;
+}
+TicketVoid.init(
+  {
+    id: { type: DataTypes.INTEGER.UNSIGNED, autoIncrement: true, primaryKey: true },
+    type: { type: DataTypes.ENUM(...TICKET_TYPES), allowNull: false },
+    serial: { type: DataTypes.STRING(40), allowNull: false },
+    reason: { type: DataTypes.ENUM(...VOID_REASONS), allowNull: false },
+    date: { type: DataTypes.DATEONLY, allowNull: false },
+    note: { type: DataTypes.STRING(300), allowNull: true },
+    userId: userRef(),
+    createdAt: DataTypes.DATE,
+  },
+  { sequelize, tableName: 'parking_ticket_voids', updatedAt: false },
+);
+
+export const DEPOSIT_STATUSES = ['MENUNGGU', 'DITERIMA', 'SELISIH'] as const;
+/** Setoran hasil parkir dari petugas (SOP 6.7). */
+export class Deposit extends Model<InferAttributes<Deposit>, InferCreationAttributes<Deposit>> {
+  declare id: CreationOptional<number>;
+  declare userId: number;
+  declare date: string;
+  declare amount: number;
+  declare ticketCar: number;
+  declare ticketMotor: number;
+  declare expected: number; // karcis × tarif saat setoran dibuat
+  declare photoPath: string | null;
+  declare note: string | null;
+  declare status: CreationOptional<(typeof DEPOSIT_STATUSES)[number]>;
+  declare reviewNote: string | null;
+  declare reviewedById: number | null;
+  declare reviewedAt: Date | null;
+  declare createdAt: CreationOptional<Date>;
+}
+Deposit.init(
+  {
+    id: { type: DataTypes.INTEGER.UNSIGNED, autoIncrement: true, primaryKey: true },
+    userId: userRef(),
+    date: { type: DataTypes.DATEONLY, allowNull: false },
+    amount: { type: DataTypes.INTEGER.UNSIGNED, allowNull: false },
+    ticketCar: count(),
+    ticketMotor: count(),
+    expected: { type: DataTypes.INTEGER.UNSIGNED, allowNull: false },
+    photoPath: { type: DataTypes.STRING(255), allowNull: true },
+    note: { type: DataTypes.STRING(500), allowNull: true },
+    status: { type: DataTypes.ENUM(...DEPOSIT_STATUSES), allowNull: false, defaultValue: 'MENUNGGU' },
+    reviewNote: { type: DataTypes.STRING(500), allowNull: true },
+    reviewedById: { type: DataTypes.INTEGER.UNSIGNED, allowNull: true },
+    reviewedAt: { type: DataTypes.DATE, allowNull: true },
+    createdAt: DataTypes.DATE,
+  },
+  { sequelize, tableName: 'parking_deposits', updatedAt: false, indexes: [{ fields: ['date'] }] },
+);
+
+export const HANDOVER_STATUSES = ['MENUNGGU', 'DITERIMA', 'DIKETAHUI'] as const;
+/** Berita acara serah terima shift (SOP 3.9, Lampiran A). */
+export class Handover extends Model<InferAttributes<Handover>, InferCreationAttributes<Handover>> {
+  declare id: CreationOptional<number>;
+  declare date: string;
+  declare fromUserId: number;
+  declare toUserId: number;
+  declare post: string | null;
+  declare remainingCar: number;
+  declare remainingMotor: number;
+  declare lastSerialCar: string | null;
+  declare lastSerialMotor: string | null;
+  declare voidNote: string | null;
+  declare cashAmount: number;
+  declare cashNote: string | null;
+  declare equipment: string | null;
+  declare pendingIssues: string | null;
+  declare status: CreationOptional<(typeof HANDOVER_STATUSES)[number]>;
+  declare acceptedAt: Date | null;
+  declare acknowledgedById: number | null;
+  declare acknowledgedAt: Date | null;
+  declare createdAt: CreationOptional<Date>;
+}
+Handover.init(
+  {
+    id: { type: DataTypes.INTEGER.UNSIGNED, autoIncrement: true, primaryKey: true },
+    date: { type: DataTypes.DATEONLY, allowNull: false },
+    fromUserId: userRef(),
+    toUserId: userRef(),
+    post: { type: DataTypes.STRING(20), allowNull: true },
+    remainingCar: count(),
+    remainingMotor: count(),
+    lastSerialCar: { type: DataTypes.STRING(40), allowNull: true },
+    lastSerialMotor: { type: DataTypes.STRING(40), allowNull: true },
+    voidNote: { type: DataTypes.STRING(300), allowNull: true },
+    cashAmount: count(),
+    cashNote: { type: DataTypes.STRING(300), allowNull: true },
+    equipment: { type: DataTypes.STRING(300), allowNull: true },
+    pendingIssues: { type: DataTypes.STRING(500), allowNull: true },
+    status: { type: DataTypes.ENUM(...HANDOVER_STATUSES), allowNull: false, defaultValue: 'MENUNGGU' },
+    acceptedAt: { type: DataTypes.DATE, allowNull: true },
+    acknowledgedById: { type: DataTypes.INTEGER.UNSIGNED, allowNull: true },
+    acknowledgedAt: { type: DataTypes.DATE, allowNull: true },
+    createdAt: DataTypes.DATE,
+  },
+  { sequelize, tableName: 'parking_handovers', updatedAt: false, indexes: [{ fields: ['date'] }] },
+);
+
+export const INCIDENT_TYPES = [
+  'KEHILANGAN_KENDARAAN',
+  'KERUSAKAN_KENDARAAN',
+  'TABRAKAN',
+  'PENCURIAN',
+  'KECELAKAAN_KERJA',
+  'PENGUNJUNG_SAKIT',
+  'KELUHAN_PENGUNJUNG',
+  'KARCIS_HILANG',
+  'KENDARAAN_MENGINAP',
+  'BENDA_MENCURIGAKAN',
+  'GANGGUAN_KEAMANAN',
+  'BENCANA_CUACA',
+  'LISTRIK_PADAM',
+  'LAINNYA',
+] as const;
+export const INCIDENT_STATUSES = ['BARU', 'DITINDAKLANJUTI', 'SELESAI'] as const;
+/** Laporan kejadian lapangan dengan foto (SOP 7.1–7.4, Lampiran B). */
+export class Incident extends Model<InferAttributes<Incident>, InferCreationAttributes<Incident>> {
+  declare id: CreationOptional<number>;
+  declare reporterId: number;
+  declare date: string;
+  declare time: string; // HH:MM
+  declare location: string;
+  declare type: (typeof INCIDENT_TYPES)[number];
+  declare parties: string | null;
+  declare plate: string | null;
+  declare vehicle: string | null;
+  declare ticketNo: string | null;
+  declare chronology: string;
+  declare actions: string | null;
+  declare contacted: string | null;
+  declare photos: string[];
+  declare status: CreationOptional<(typeof INCIDENT_STATUSES)[number]>;
+  declare reviewNote: string | null;
+  declare reviewedById: number | null;
+  declare reviewedAt: Date | null;
+  declare createdAt: CreationOptional<Date>;
+}
+Incident.init(
+  {
+    id: { type: DataTypes.INTEGER.UNSIGNED, autoIncrement: true, primaryKey: true },
+    reporterId: userRef(),
+    date: { type: DataTypes.DATEONLY, allowNull: false },
+    time: { type: DataTypes.STRING(5), allowNull: false },
+    location: { type: DataTypes.STRING(100), allowNull: false },
+    type: { type: DataTypes.ENUM(...INCIDENT_TYPES), allowNull: false },
+    parties: { type: DataTypes.STRING(300), allowNull: true },
+    plate: { type: DataTypes.STRING(20), allowNull: true },
+    vehicle: { type: DataTypes.STRING(20), allowNull: true },
+    ticketNo: { type: DataTypes.STRING(40), allowNull: true },
+    chronology: { type: DataTypes.TEXT, allowNull: false },
+    actions: { type: DataTypes.STRING(1000), allowNull: true },
+    contacted: { type: DataTypes.STRING(300), allowNull: true },
+    photos: {
+      type: DataTypes.JSON,
+      allowNull: false,
+      // MariaDB menyimpan JSON sebagai teks; pastikan selalu terbaca sebagai array
+      get() {
+        const v = this.getDataValue('photos') as unknown;
+        return typeof v === 'string' ? (JSON.parse(v) as string[]) : ((v as string[] | null) ?? []);
+      },
+    },
+    status: { type: DataTypes.ENUM(...INCIDENT_STATUSES), allowNull: false, defaultValue: 'BARU' },
+    reviewNote: { type: DataTypes.STRING(500), allowNull: true },
+    reviewedById: { type: DataTypes.INTEGER.UNSIGNED, allowNull: true },
+    reviewedAt: { type: DataTypes.DATE, allowNull: true },
+    createdAt: DataTypes.DATE,
+  },
+  { sequelize, tableName: 'parking_incidents', updatedAt: false, indexes: [{ fields: ['date'] }] },
+);
 
 export { sequelize };
