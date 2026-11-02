@@ -247,3 +247,14 @@ def identify(req: IdentifyRequest):
     distances = np.array([float(cosine_distance_matrix(np.array(c.embeddings), probe[None, :]).min()) for c in req.candidates])
     order = np.argsort(distances)[:5]
     return {"model": MODEL_ID, "ranked": [{"id": req.candidates[int(i)].id, "distance": round(float(distances[int(i)]), 4)} for i in order]}
+
+
+# ───────────── Penyusun roster (OR-Tools CP-SAT) ─────────────
+@app.post("/roster/solve")
+def roster_solve(payload: dict):
+    """Menyusun roster dengan constraint solver; dipanggil backend dari menu Roster Otomatis."""
+    try:
+        from roster_solver import solve
+    except ImportError as exc:  # pustaka belum terpasang → backend memakai mesin lama
+        raise HTTPException(status_code=503, detail=f"OR-Tools belum terpasang: {exc}") from exc
+    return solve(payload)

@@ -120,6 +120,8 @@ cd "$APP_DIR/face-service"
 [[ -d .venv ]] || python3 -m venv .venv
 .venv/bin/pip install --upgrade pip
 .venv/bin/pip install -r requirements.txt
+# Penyusun roster (OR-Tools) dipasang terpisah: bila gagal, update tetap jalan dan Roster Otomatis memakai mesin lama
+.venv/bin/pip install "ortools==9.11.4210" || echo "⚠️  OR-Tools gagal dipasang — Roster Otomatis memakai mesin lama"
 .venv/bin/python download_models.py
 .venv/bin/python -c "import cv2; print('OpenCV OK', cv2.__version__)"
 

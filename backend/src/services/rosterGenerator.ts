@@ -292,3 +292,66 @@ export function generateBestRoster(employees: GenEmployee[], opt: Omit<GenOption
   }
   return best!;
 }
+
+/**
+ * Menyusun GenResult (statistik, ringkasan harian, pemeriksaan aturan) dari sel yang sudah jadi —
+ * dipakai mesin baru (OR-Tools) supaya pratinjau, pemerataan, dan penyimpanan sama dengan mesin lama.
+ */
+export function resultFromCells(employees: GenEmployee[], opt: GenOptions, rows: Map<number, Map<string, GenCell>>): GenResult {
+  const dates = Array.from({ length: opt.weeks * 7 }, (_, i) => addDays(opt.start, i));
+  const stats: GenStats[] = employees.map((e) => {
+    const row = rows.get(e.id)!;
+    const s: GenStats = { userId: e.id, name: e.name, shift1: 0, shift2: 0, fixed: 0, off: 0, weekendOff: 0, shortRest: 0, offByWeekday: [0, 0, 0, 0, 0, 0, 0], maxSameMate: 0 };
+    dates.forEach((d, i) => {
+      const c = row.get(d);
+      if (c === 'OFF') {
+        s.off++;
+        s.offByWeekday[weekday(d)]++;
+        if (isWeekend(weekday(d))) s.weekendOff++;
+      } else if (c === opt.shift1Id && e.fixedShiftId === null) s.shift1++;
+      else if (c === opt.shift2Id && e.fixedShiftId === null) s.shift2++;
+      else if (c !== undefined) s.fixed++;
+      const before = i === 0 ? opt.prevDay.get(e.id) : row.get(dates[i - 1]);
+      if (before === opt.shift2Id && c === opt.shift1Id) s.shortRest++;
+    });
+    return s;
+  });
+  for (const s of stats) {
+    const mine = rows.get(s.userId)!;
+    s.maxSameMate = Math.max(
+      0,
+      ...stats.filter((o) => o.userId !== s.userId).map((o) => dates.filter((d) => mine.get(d) === 'OFF' && rows.get(o.userId)!.get(d) === 'OFF').length),
+    );
+  }
+  const daily = dates.map((date) => {
+    const cell = (e: GenEmployee) => rows.get(e.id)!.get(date);
+    return {
+      date,
+      shift1: employees.filter((e) => e.fixedShiftId === null && cell(e) === opt.shift1Id).length,
+      shift2: employees.filter((e) => e.fixedShiftId === null && cell(e) === opt.shift2Id).length,
+      fixed: employees.filter((e) => e.fixedShiftId !== null && typeof cell(e) === 'number').length,
+      off: employees.filter((e) => cell(e) === 'OFF').length,
+    };
+  });
+  const result: GenResult = { dates, cells: rows, stats, daily, warnings: [], violations: [] };
+  result.violations = [...checkRules(result, employees, opt), ...checkShortRest(result, employees, opt)];
+  return result;
+}
+
+/**
+ * Pulang malam (Shift 2) lalu besok masuk pagi (Shift 1) — wajib bagi mesin baru, kecuali Shift 1
+ * besoknya memang diwajibkan aturan orang itu (mis. kuliah malam: tidak bisa Shift 2 di hari itu).
+ */
+export function checkShortRest(r: GenResult, employees: GenEmployee[], opt: Pick<GenOptions, 'shift1Id' | 'shift2Id' | 'prevDay'>): string[] {
+  const out: string[] = [];
+  for (const e of employees) {
+    const row = r.cells.get(e.id)!;
+    r.dates.forEach((d, i) => {
+      const before = i === 0 ? opt.prevDay.get(e.id) : row.get(r.dates[i - 1]);
+      if (before === opt.shift2Id && row.get(d) === opt.shift1Id && !e.noShift2Days.includes(weekday(d))) {
+        out.push(`${e.name}, ${DAY_NAME[weekday(d)]} ${d}: pulang malam lalu masuk pagi`);
+      }
+    });
+  }
+  return out;
+}

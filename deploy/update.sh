@@ -24,6 +24,8 @@ bash "$APP_DIR/deploy/backup-db.sh"
 step "Face-service"
 cd "$APP_DIR/face-service"
 .venv/bin/pip install -r requirements.txt
+# Penyusun roster (OR-Tools) dipasang terpisah: bila gagal, update tetap jalan dan Roster Otomatis memakai mesin lama
+.venv/bin/pip install "ortools==9.11.4210" || echo "⚠️  OR-Tools gagal dipasang — Roster Otomatis memakai mesin lama"
 # Paket mesin lama (dlib) tidak dipakai lagi sejak pindah ke OpenCV YuNet + SFace
 .venv/bin/pip uninstall -y face_recognition face_recognition_models dlib-bin dlib 2>/dev/null || true
 .venv/bin/python download_models.py

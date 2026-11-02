@@ -6,6 +6,7 @@ import { ATTENDEE_ROLES, EmployeeSchedule, Holiday, RosterRule, SLOT_TYPES, Shif
 import { assignPlacements, DEFAULT_POSTS, getPosts, loadHistory, plottedUserFilter, rebalancePlacements, savePosts } from '../services/placement';
 import { buildWhatsappText, loadRosterData, sendRosterPdf, sendRosterXlsx } from '../services/rosterExport';
 import { GenEmployee, generateBestRoster } from '../services/rosterGenerator';
+import { RosterInfeasible, SolverUnavailable, solveRoster } from '../services/rosterSolver';
 import { getLateTolerance, saveLateTolerance } from '../services/settings';
 import { BreakInput, loadShifts, SlotInput, validateShiftTimes } from '../services/shiftService';
 import { ah, HttpError } from '../utils/http';
@@ -296,6 +297,8 @@ router.post(
         weeks: z.number().int().min(3).max(13),
         offPerWeek: z.number().int().min(1).max(2).default(1),
         shift2Extra: z.number().int().min(0).max(5).default(1),
+        // SOLVER = OR-Tools (aturan pulang malam → masuk pagi wajib); LAMA = penyusun hari demi hari
+        engine: z.enum(['SOLVER', 'LAMA']).default('SOLVER'),
       })
       .parse(req.body);
     if (body.start < witNow().date) throw new HttpError(400, 'Tanggal mulai tidak boleh sebelum hari ini');
@@ -316,13 +319,35 @@ router.post(
       noShift1Days: r.noShift1Days,
       noShift2Days: r.noShift2Days,
     }));
-    const result = generateBestRoster(employees, {
-      ...body,
+    const genOpt = {
+      start: body.start,
+      weeks: body.weeks,
+      offPerWeek: body.offPerWeek,
+      shift2Extra: body.shift2Extra,
       shift1Id: s1.id,
       shift2Id: s2.id,
       holidays: new Set(holidays.map((h) => h.date)),
       prevDay: new Map(prevRows.map((s) => [s.userId, s.shiftId === null ? ('OFF' as const) : s.shiftId])),
-    });
+    };
+    let result: ReturnType<typeof generateBestRoster>;
+    let engine = { used: body.engine, status: null as string | null, wallTime: null as number | null, note: null as string | null };
+    if (body.engine === 'SOLVER') {
+      try {
+        const solved = await solveRoster(employees, genOpt);
+        result = solved.result;
+        engine = { ...engine, status: solved.status, wallTime: solved.wallTime };
+      } catch (e) {
+        if (e instanceof RosterInfeasible) {
+          throw new HttpError(400, `Roster tidak bisa disusun dengan semua aturan wajib. ${e.reasons.join(' ')}`);
+        }
+        if (!(e instanceof SolverUnavailable)) throw e;
+        // Mesin baru belum tersedia di server → tetap jalan dengan mesin lama, beri tahu pengguna
+        result = generateBestRoster(employees, genOpt);
+        engine = { used: 'LAMA', status: null, wallTime: null, note: `${e.message}; memakai mesin lama.` };
+      }
+    } else {
+      result = generateBestRoster(employees, genOpt);
+    }
     // Pratinjau penempatan pos, dihitung dengan cara yang sama seperti saat roster disimpan
     const [posts, plotted, start] = await Promise.all([getPosts(), plottedUserFilter(), loadHistory(body.start)]);
     const placement = assignPlacements(
@@ -358,6 +383,7 @@ router.post(
       daily: result.daily,
       warnings: result.warnings,
       existingSchedules: existing,
+      engine,
     });
   }),
 );

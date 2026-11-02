@@ -53,6 +53,7 @@ interface Preview {
   daily: { date: string; shift1: number; shift2: number; fixed: number; off: number }[];
   warnings: string[];
   existingSchedules: number;
+  engine: { used: 'SOLVER' | 'LAMA'; status: string | null; wallTime: number | null; note: string | null };
 }
 
 /**
@@ -159,13 +160,14 @@ export default function RosterOtomatis() {
   const [start, setStart] = useState(nextMonday);
   const [weeks, setWeeks] = useState(RECOMMENDED_WEEKS);
   const [shift2Extra, setShift2Extra] = useState(1);
+  const [engine, setEngine] = useState<'SOLVER' | 'LAMA'>('SOLVER');
   const [preview, setPreview] = useState<Preview | null>(null);
   const [generating, setGenerating] = useState(false);
   const [applying, setApplying] = useState(false);
   const [genError, setGenError] = useState<string | null>(null);
   const [saved, setSaved] = useState<{ from: string; to: string } | null>(null);
 
-  useEffect(() => setPreview(null), [start, weeks, shift2Extra]);
+  useEffect(() => setPreview(null), [start, weeks, shift2Extra, engine]);
 
   if (loading && !data) return <Loading />;
   if (!data) return <Alert>{error}</Alert>;
@@ -193,7 +195,7 @@ export default function RosterOtomatis() {
     setGenerating(true);
     setGenError(null);
     try {
-      setPreview(await api.post<Preview>('/admin/roster/generate', { start, weeks, shift2Extra }));
+      setPreview(await api.post<Preview>('/admin/roster/generate', { start, weeks, shift2Extra, engine }));
     } catch (e) {
       setGenError(errMsg(e));
     } finally {
@@ -322,6 +324,12 @@ export default function RosterOtomatis() {
                 ))}
               </Select>
             </Field>
+            <Field label="Mesin penyusun" hint="Mesin baru menjamin semua aturan wajib, termasuk tidak ada pulang malam lalu besok masuk pagi. Pilih Lama untuk membandingkan">
+              <Select value={engine} onChange={(e) => setEngine(e.target.value as 'SOLVER' | 'LAMA')}>
+                <option value="SOLVER">Baru (OR-Tools) — disarankan</option>
+                <option value="LAMA">Lama (hari demi hari)</option>
+              </Select>
+            </Field>
             <Field label="Shift 2 lebih banyak dari Shift 1" hint="Selisih minimal jumlah orang Shift 2 dibanding Shift 1 setiap hari">
               <Select value={shift2Extra} onChange={(e) => setShift2Extra(Number(e.target.value))}>
                 {[0, 1, 2, 3].map((n) => (
@@ -374,6 +382,22 @@ export default function RosterOtomatis() {
               </div>
             }
           >
+            <div className="mb-3">
+              <Alert kind={preview.engine.note ? 'error' : 'info'}>
+                {preview.engine.used === 'SOLVER' ? (
+                  <>
+                    Disusun dengan <b>mesin baru (OR-Tools)</b>
+                    {preview.engine.wallTime !== null && ` dalam ${preview.engine.wallTime} detik`}
+                    {preview.engine.status === 'OPTIMAL' ? ' · hasil paling rata' : ''}. Tidak ada petugas yang pulang malam lalu besok masuk pagi, kecuali
+                    pada hari yang diwajibkan aturannya sendiri (mis. kuliah).
+                  </>
+                ) : (
+                  <>
+                    Disusun dengan <b>mesin lama</b>. {preview.engine.note ?? 'Pulang malam lalu masuk pagi hanya dihindari, belum dilarang — cek kolom terakhir tabel pemerataan.'}
+                  </>
+                )}
+              </Alert>
+            </div>
             <div className="mb-3">
               <Alert kind="success">
                 Semua aturan karyawan terpenuhi (sudah dicek sistem per tanggal):
