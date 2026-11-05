@@ -15,6 +15,7 @@ import PengaturanShift from './pages/admin/PengaturanShift';
 import Roster from './pages/admin/Roster';
 import RosterOtomatis from './pages/admin/RosterOtomatis';
 import OperasionalPengelola from './pages/parkir/Pengelola';
+import Disiplin from './pages/shared/Disiplin';
 import OperasionalPetugas from './pages/parkir/Petugas';
 import BerandaKaryawan from './pages/karyawan/Beranda';
 import Izin from './pages/karyawan/Izin';
@@ -74,6 +75,7 @@ export default function App() {
         <Route path="laporan" element={<Guard roles={REVIEWERS}><Laporan /></Guard>} />
         <Route path="review-izin" element={<Guard roles={REVIEWERS}><ReviewIzin /></Guard>} />
         <Route path="review-kendala" element={<Guard roles={REVIEWERS}><ReviewKendala /></Guard>} />
+        <Route path="disiplin" element={<Guard roles={REVIEWERS}><Disiplin /></Guard>} />
         <Route path="karyawan" element={<Guard roles={ADMIN}><Karyawan /></Guard>} />
         <Route path="roster" element={<Guard roles={REVIEWERS}><Roster /></Guard>} />
         <Route path="roster-otomatis" element={<Guard roles={ADMIN}><RosterOtomatis /></Guard>} />

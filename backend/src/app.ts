@@ -11,6 +11,7 @@ import meRoutes from './routes/me';
 import monitorRoutes from './routes/monitor';
 import planningRoutes from './routes/planning';
 import parkingRoutes from './routes/parking';
+import disciplineRoutes from './routes/discipline';
 
 export const app = express();
 
@@ -27,6 +28,7 @@ app.use('/api/me', requireAuth, meRoutes);
 // planningRoutes (roster & pengaturan shift) juga untuk Koordinator; sisanya khusus Super Admin
 app.use('/api/admin', requireAuth, planningRoutes, adminRoutes);
 app.use('/api/parking', requireAuth, parkingRoutes);
+app.use('/api/discipline', requireAuth, disciplineRoutes);
 app.use('/api', requireAuth, monitorRoutes);
 
 app.use('/api', (_req, res) => res.status(404).json({ message: 'Endpoint tidak ditemukan' }));

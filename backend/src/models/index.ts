@@ -794,4 +794,58 @@ Incident.init(
   { sequelize, tableName: 'parking_incidents', updatedAt: false, indexes: [{ fields: ['date'] }] },
 );
 
+// ───────────────────────────── Surat peringatan / panggilan (mangkir, PKWT Pasal 8) ─────────────────────────────
+export const LETTER_TYPES = ['PERINGATAN_1', 'PERINGATAN_2', 'PANGGILAN_1', 'PANGGILAN_2'] as const;
+export type LetterType = (typeof LETTER_TYPES)[number];
+/** Surat disiplin yang diterbitkan; tidak dihapus, hanya dibatalkan dengan alasan. */
+export class DisciplineLetter extends Model<InferAttributes<DisciplineLetter>, InferCreationAttributes<DisciplineLetter>> {
+  declare id: CreationOptional<number>;
+  declare userId: number;
+  declare type: LetterType;
+  declare year: number;
+  declare seq: number; // nomor urut per tahun
+  declare number: string;
+  declare letterDate: string;
+  declare alfaDates: string[];
+  declare reportDate: string | null; // khusus surat panggilan
+  declare reportTime: string | null;
+  declare reportPlace: string | null;
+  declare note: string | null;
+  declare createdById: number;
+  declare voidReason: string | null;
+  declare voidedById: number | null;
+  declare voidedAt: Date | null;
+  declare createdAt: CreationOptional<Date>;
+}
+DisciplineLetter.init(
+  {
+    id: { type: DataTypes.INTEGER.UNSIGNED, autoIncrement: true, primaryKey: true },
+    userId: { type: DataTypes.INTEGER.UNSIGNED, allowNull: false, references: { model: 'users', key: 'id' } },
+    type: { type: DataTypes.ENUM(...LETTER_TYPES), allowNull: false },
+    year: { type: DataTypes.SMALLINT.UNSIGNED, allowNull: false },
+    seq: { type: DataTypes.INTEGER.UNSIGNED, allowNull: false },
+    number: { type: DataTypes.STRING(60), allowNull: false },
+    letterDate: { type: DataTypes.DATEONLY, allowNull: false },
+    alfaDates: {
+      type: DataTypes.JSON,
+      allowNull: false,
+      // MariaDB menyimpan JSON sebagai teks; pastikan selalu terbaca sebagai array
+      get() {
+        const v = this.getDataValue('alfaDates') as unknown;
+        return typeof v === 'string' ? (JSON.parse(v) as string[]) : ((v as string[] | null) ?? []);
+      },
+    },
+    reportDate: { type: DataTypes.DATEONLY, allowNull: true },
+    reportTime: { type: DataTypes.STRING(5), allowNull: true },
+    reportPlace: { type: DataTypes.STRING(150), allowNull: true },
+    note: { type: DataTypes.STRING(500), allowNull: true },
+    createdById: { type: DataTypes.INTEGER.UNSIGNED, allowNull: false, references: { model: 'users', key: 'id' } },
+    voidReason: { type: DataTypes.STRING(300), allowNull: true },
+    voidedById: { type: DataTypes.INTEGER.UNSIGNED, allowNull: true },
+    voidedAt: { type: DataTypes.DATE, allowNull: true },
+    createdAt: DataTypes.DATE,
+  },
+  { sequelize, tableName: 'discipline_letters', updatedAt: false, indexes: [{ unique: true, fields: ['year', 'seq'] }, { fields: ['user_id'] }] },
+);
+
 export { sequelize };

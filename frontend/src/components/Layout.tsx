@@ -60,6 +60,7 @@ export const NAV_GROUPS: Record<Role, NavGroup[]> = {
       items: [
         { to: '/app/review-izin', label: 'Pengajuan Izin', icon: 'inbox' },
         { to: '/app/review-kendala', label: 'Laporan Kendala', icon: 'shield' },
+        { to: '/app/disiplin', label: 'Peringatan Disiplin', icon: 'userX' },
       ],
     },
     {
@@ -83,6 +84,7 @@ export const NAV_GROUPS: Record<Role, NavGroup[]> = {
       items: [
         { to: '/app/review-izin', label: 'Pengajuan Izin', icon: 'send' },
         { to: '/app/review-kendala', label: 'Laporan Kendala', icon: 'alert' },
+        { to: '/app/disiplin', label: 'Peringatan Disiplin', icon: 'userX' },
         { to: '/app/koreksi', label: 'Koreksi & Audit', icon: 'shield' },
       ],
     },
@@ -131,14 +133,19 @@ function useCollapsed() {
 
 /** Jumlah izin & kendala yang menunggu tindakan (untuk lonceng notifikasi). */
 function usePendingCounts(role: Role) {
-  const [counts, setCounts] = useState<{ leaves: number; issues: number } | null>(null);
+  const [counts, setCounts] = useState<{ leaves: number; issues: number; discipline: number } | null>(null);
   const location = useLocation();
   useEffect(() => {
     if (role === 'KARYAWAN') return;
     const load = () =>
-      Promise.all([api.get<LeaveRequest[]>('/leaves?status=PENDING'), api.get<AttendanceIssue[]>('/issues')])
-        .then(([leaves, issues]) =>
+      Promise.all([
+        api.get<LeaveRequest[]>('/leaves?status=PENDING'),
+        api.get<AttendanceIssue[]>('/issues'),
+        api.get<{ needAction: number }>('/discipline/overview').catch(() => ({ needAction: 0 })),
+      ])
+        .then(([leaves, issues, discipline]) =>
           setCounts({
+            discipline: discipline.needAction,
             leaves: leaves.length,
             issues: issues.filter((i) => i.status === 'OPEN' || (role === 'SUPER_ADMIN' && i.status === 'ESCALATED')).length,
           }),
@@ -162,7 +169,7 @@ function Bell({ role }: { role: Role }) {
     return () => document.removeEventListener('mousedown', onDoc);
   }, []);
   if (role === 'KARYAWAN') return null;
-  const total = (counts?.leaves ?? 0) + (counts?.issues ?? 0);
+  const total = (counts?.leaves ?? 0) + (counts?.issues ?? 0) + (counts?.discipline ?? 0);
 
   return (
     <div className="relative" ref={ref}>
@@ -189,6 +196,7 @@ function Bell({ role }: { role: Role }) {
               label: role === 'SUPER_ADMIN' ? 'Laporan kendala baru / diteruskan' : 'Laporan kendala baru',
               n: counts?.issues ?? 0,
             },
+            { to: '/app/disiplin', icon: 'userX' as const, label: 'Karyawan Alfa perlu tindakan', n: counts?.discipline ?? 0 },
           ].map((it) => (
             <Link key={it.to} to={it.to} onClick={() => setOpen(false)} className="flex items-center gap-3 px-4 py-3 text-sm hover:bg-slate-50">
               <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100 text-slate-500">
