@@ -14,7 +14,7 @@ REMOTE_NAME="${RCLONE_REMOTE%%:*}"
 step "1/5 Pasang rclone & openssl"
 command -v rclone >/dev/null || { apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y rclone; }
 command -v openssl >/dev/null || DEBIAN_FRONTEND=noninteractive apt-get install -y openssl
-rclone version | head -1
+rclone version 2>/dev/null | sed -n 1p || true
 
 step "2/5 Kunci enkripsi backup"
 mkdir -p "$SMC_ETC" && chmod 700 "$SMC_ETC"
@@ -46,7 +46,7 @@ else
 fi
 
 step "3/5 Sambungan Google Drive (remote rclone '$REMOTE_NAME')"
-if ! rclone listremotes | grep -qx "$REMOTE_NAME:"; then
+if ! rclone listremotes | grep -x "$REMOTE_NAME:" >/dev/null; then
   cat <<EOF
 Remote '$REMOTE_NAME' belum ada. Buat sekarang (ikuti langkah ini):
   n  (New remote)  → name: $REMOTE_NAME
@@ -64,7 +64,7 @@ Remote '$REMOTE_NAME' belum ada. Buat sekarang (ikuti langkah ini):
 EOF
   read -r -p "Tekan Enter untuk membuka rclone config… " _
   rclone config
-  rclone listremotes | grep -qx "$REMOTE_NAME:" || die "Remote '$REMOTE_NAME' belum dibuat. Jalankan ulang skrip ini."
+  rclone listremotes | grep -x "$REMOTE_NAME:" >/dev/null || die "Remote '$REMOTE_NAME' belum dibuat. Jalankan ulang skrip ini."
 fi
 rclone mkdir "$RCLONE_REMOTE"
 echo "tes $(date)" > /tmp/smc-backup-tes.txt
