@@ -99,4 +99,50 @@ Bila karyawan & wajah sudah didaftarkan di laptop dan ingin dibawa ke server, la
 
 - Login SSH memakai **SSH key**, lalu matikan login password (`PasswordAuthentication no` di `/etc/ssh/sshd_config`).
 - Jalankan `apt upgrade` secara berkala; ada 30 update tertunda di VPS saat ini.
-- Salin isi `/var/backups/smc` ke tempat lain (Google Drive/PC) secara berkala.
+- Aktifkan **backup luar server** (bagian di bawah) supaya data tidak hilang bila VPS rusak.
+
+## Backup luar server (Google Drive) — wajib
+
+Backup harian lokal hanya disimpan di VPS yang sama. Bila VPS rusak/diretas, **data wajah semua karyawan** ikut hilang.
+Skrip berikut mengirim salinan **terenkripsi** (AES-256) ke Google Drive setiap hari dan menguji pemulihannya tiap bulan.
+
+### Pemasangan (sekali saja)
+
+1. **Di PC Anda** (perlu browser): pasang rclone dari https://rclone.org/downloads/ lalu siapkan Command Prompt — dipakai di langkah 3.
+2. **Di VPS**:
+   ```bash
+   bash /var/www/smc/deploy/setup-backup-offsite.sh
+   ```
+3. Skrip menampilkan **KUNCI BACKUP** → simpan di tempat aman di luar server (kertas, password manager, flashdisk).
+   **Tanpa kunci ini backup tidak bisa dibuka.**
+4. Skrip membuka `rclone config` → buat remote bernama `smc-gdrive`, jenis `drive`, scope `3` (drive.file),
+   pilih **n** pada "Use web browser", lalu jalankan perintah `rclone authorize "drive" "…"` yang ditampilkan **di PC Anda**,
+   login akun Google pemilik backup, dan tempel token yang muncul ke VPS.
+5. Skrip mengirim backup pertama dan langsung menguji pemulihannya. Selesai bila muncul **UJI PEMULIHAN BERHASIL**.
+
+### Sehari-hari
+
+| Keperluan | Perintah |
+|---|---|
+| Hasil backup & uji pulih terakhir | `cat /var/lib/smc/*.status` |
+| Log backup | `tail -50 /var/log/smc-backup.log` |
+| Uji pemulihan manual | `bash /var/www/smc/deploy/restore-test.sh` |
+| Lihat backup di Google Drive | `bash /var/www/smc/deploy/restore-offsite.sh` |
+
+- Jadwal: backup tiap hari 02:30 WIT (lokal 14 hari, Google Drive 90 hari di folder `SMC-Backup/<tahun-bulan>`); uji pemulihan tanggal 1 tiap bulan.
+- `update.sh` juga membackup (termasuk ke Google Drive) sebelum memperbarui aplikasi. Bila Google Drive sedang tidak bisa dihubungi, backup lokal tetap jalan dan update tidak terhenti.
+- Uji pemulihan memakai database terpisah (`smc_restore_test`) yang langsung dihapus — data asli tidak disentuh.
+
+### Pemulihan darurat (server baru)
+
+1. Siapkan VPS baru dengan `setup-server.sh` seperti biasa.
+2. Salin kunci backup: `mkdir -p /etc/smc && nano /etc/smc/backup.key` (tempel kunci, simpan), lalu `chmod 600 /etc/smc/backup.key`.
+3. `bash /var/www/smc/deploy/setup-backup-offsite.sh` — sambungkan Google Drive lagi. Skrip mendeteksi server masih kosong dan **tidak** mengirim backup kosong.
+4. `bash /var/www/smc/deploy/restore-offsite.sh terbaru` → ketik `PULIHKAN`. Database (termasuk data wajah) dan file upload kembali.
+5. Jalankan `setup-backup-offsite.sh` sekali lagi untuk menyalakan backup harian.
+
+Membuka backup langsung di PC (Git Bash), mis. untuk arsip:
+```bash
+openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -pass file:backup.key -in db-XXXX.sql.gz.enc -out db-XXXX.sql.gz
+```
+
