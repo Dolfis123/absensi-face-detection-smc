@@ -12,6 +12,7 @@ import monitorRoutes from './routes/monitor';
 import planningRoutes from './routes/planning';
 import parkingRoutes from './routes/parking';
 import disciplineRoutes from './routes/discipline';
+import payrollRoutes from './routes/payroll';
 
 export const app = express();
 
@@ -29,6 +30,7 @@ app.use('/api/me', requireAuth, meRoutes);
 app.use('/api/admin', requireAuth, planningRoutes, adminRoutes);
 app.use('/api/parking', requireAuth, parkingRoutes);
 app.use('/api/discipline', requireAuth, disciplineRoutes);
+app.use('/api/payroll', requireAuth, payrollRoutes);
 app.use('/api', requireAuth, monitorRoutes);
 
 app.use('/api', (_req, res) => res.status(404).json({ message: 'Endpoint tidak ditemukan' }));

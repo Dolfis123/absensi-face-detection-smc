@@ -848,4 +848,20 @@ DisciplineLetter.init(
   { sequelize, tableName: 'discipline_letters', updatedAt: false, indexes: [{ unique: true, fields: ['year', 'seq'] }, { fields: ['user_id'] }] },
 );
 
+// ───────────────────────────── Upah pokok per karyawan (untuk rekap upah kehadiran) ─────────────────────────────
+/** Upah pokok bulanan sesuai PKWT masing-masing; bila belum diisi, dipakai upah bawaan per jabatan. */
+export class EmployeeWage extends Model<InferAttributes<EmployeeWage>, InferCreationAttributes<EmployeeWage>> {
+  declare userId: number;
+  declare baseWage: number;
+  declare updatedAt: CreationOptional<Date>;
+}
+EmployeeWage.init(
+  {
+    userId: { type: DataTypes.INTEGER.UNSIGNED, primaryKey: true, references: { model: 'users', key: 'id' } },
+    baseWage: { type: DataTypes.INTEGER.UNSIGNED, allowNull: false },
+    updatedAt: DataTypes.DATE,
+  },
+  { sequelize, tableName: 'employee_wages', createdAt: false },
+);
+
 export { sequelize };

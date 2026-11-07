@@ -103,6 +103,7 @@ export const NAV_GROUPS: Record<Role, NavGroup[]> = {
         { to: '/app/pengaturan-shift', label: 'Pengaturan Shift', icon: 'clock' },
         { to: '/app/geofence', label: 'Geofence Pos', icon: 'mapPin' },
         { to: '/app/laporan', label: 'Laporan', icon: 'download' },
+        { to: '/app/upah', label: 'Rekap Upah', icon: 'fileText' },
       ],
     },
   ],
