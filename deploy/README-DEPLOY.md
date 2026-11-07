@@ -146,3 +146,20 @@ Membuka backup langsung di PC (Git Bash), mis. untuk arsip:
 openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -pass file:backup.key -in db-XXXX.sql.gz.enc -out db-XXXX.sql.gz
 ```
 
+
+## Peringatan otomatis ke Super Admin (Telegram)
+
+Aplikasi memeriksa server tiap 5 menit (layanan wajah, backup & uji pemulihan, ruang disk, surat yang belum
+diterima petugas) dan mengirim ringkasan kehadiran kemarin setiap pukul 07.00 WIT. `watchdog.sh` (dipasang
+otomatis oleh `update.sh`, cron tiap 5 menit) memberi tahu bila backend, MySQL, atau Nginx mati.
+
+1. Di Telegram, chat **@BotFather** → `/newbot` → beri nama → salin **token**.
+2. Di VPS:
+   ```bash
+   nano /var/www/smc/backend/.env      # tambahkan: TELEGRAM_BOT_TOKEN=token-dari-BotFather
+   systemctl restart smc-backend
+   ```
+3. Buka bot Anda di Telegram dan kirim `/start` (setiap penerima melakukan ini).
+4. Di aplikasi: **Kesehatan Sistem** → **Cari penerima** → **Jadikan penerima** → **Kirim pesan uji**.
+
+Tanpa Telegram, peringatan tetap tampil di menu Kesehatan Sistem dan di lonceng Super Admin.

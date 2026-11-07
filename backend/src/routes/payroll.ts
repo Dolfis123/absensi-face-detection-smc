@@ -1,11 +1,12 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { currentUser, requireRole } from '../middleware/auth';
-import { ATTENDEE_ROLES, EmployeeWage, User } from '../models';
+import { ATTENDEE_ROLES, EmployeeWage, PayrollPublication, User } from '../models';
 import { getDisciplineSettings } from '../services/discipline';
 import { computePayroll, getPayrollSettings, PayrollSettings, savePayrollSettings } from '../services/payroll';
 import { PayrollMeta, sendCertificatePdf, sendPayrollPdf } from '../services/payrollPdf';
 import { fmtMonth } from '../services/pdfReport';
+import { receiptsFor } from '../services/receipts';
 import { buildRecap } from '../services/recapService';
 import { loadShifts } from '../services/shiftService';
 import { ah, HttpError } from '../utils/http';
@@ -36,11 +37,55 @@ async function monthData(month: string) {
 
 const monthParam = (v: unknown) => z.string().regex(MONTH_RE, 'Format bulan YYYY-MM').parse(v);
 
+/** Status terbitan slip bulan ini + siapa saja yang sudah menerima (versi terbaru). */
+async function publicationInfo(month: string) {
+  const pub = await PayrollPublication.findOne({ where: { month } });
+  if (!pub) return null;
+  const rec = await receiptsFor('SLIP', [pub.id], pub.version);
+  const received: Record<number, string> = {};
+  for (const r of rec.values()) if (r.receivedAt) received[r.userId] = r.receivedAt.toISOString();
+  return { id: pub.id, version: pub.version, publishedAt: pub.publishedAt, withdrawnAt: pub.withdrawnAt, total: pub.rows.length, received };
+}
+
 router.get(
   '/months/:month',
   ah(async (req, res) => {
-    const { rows, settings, until, partial } = await monthData(monthParam(req.params.month));
-    res.json({ rows, settings, until, partial });
+    const month = monthParam(req.params.month);
+    const { rows, settings, until, partial } = await monthData(month);
+    res.json({ rows, settings, until, partial, publication: await publicationInfo(month) });
+  }),
+);
+
+/**
+ * Terbitkan slip ke akun petugas. Yang terlihat petugas adalah salinan saat diterbitkan.
+ * Terbit ulang (mis. setelah koreksi absensi) menaikkan versi; petugas diminta konfirmasi lagi.
+ */
+router.post(
+  '/months/:month/publish',
+  ah(async (req, res) => {
+    const month = monthParam(req.params.month);
+    const { rows, meta, partial } = await monthData(month);
+    if (partial) throw new HttpError(400, 'Slip hanya bisa diterbitkan setelah bulan selesai');
+    if (!rows.length) throw new HttpError(400, 'Tidak ada data upah di bulan ini');
+    const snapshot = { rows: rows as unknown[], meta: meta(currentUser(req).fullName) as unknown as Record<string, unknown> };
+    const existing = await PayrollPublication.findOne({ where: { month } });
+    if (existing) {
+      await existing.update({ ...snapshot, version: existing.version + 1, publishedById: currentUser(req).id, publishedAt: new Date(), withdrawnAt: null });
+    } else {
+      await PayrollPublication.create({ month, version: 1, ...snapshot, publishedById: currentUser(req).id, publishedAt: new Date(), withdrawnAt: null });
+    }
+    res.json(await publicationInfo(month));
+  }),
+);
+
+router.post(
+  '/months/:month/withdraw',
+  ah(async (req, res) => {
+    const month = monthParam(req.params.month);
+    const pub = await PayrollPublication.findOne({ where: { month } });
+    if (!pub || pub.withdrawnAt) throw new HttpError(404, 'Slip bulan ini belum diterbitkan');
+    await pub.update({ withdrawnAt: new Date() });
+    res.json(await publicationInfo(month));
   }),
 );
 

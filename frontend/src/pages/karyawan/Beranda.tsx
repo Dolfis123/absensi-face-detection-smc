@@ -3,6 +3,7 @@ import { RequestBadge, StatusBadge, SummaryGrid, useLoad } from '../../component
 import { Icon } from '../../components/icons';
 import { Alert, Card, cx, Empty, Skeleton } from '../../components/ui';
 import { api, EmployeeRecap, Holiday, LeaveRequest, Shift, SlotType } from '../../lib/api';
+import type { MyDocuments } from './Dokumen';
 import { useAuth } from '../../lib/auth';
 import { useServerClock } from '../../lib/clock';
 import { addDays, fmtDate, greeting, shortDay, SLOT_LABEL } from '../../lib/format';
@@ -35,6 +36,7 @@ export default function BerandaKaryawan() {
         api.get<Shift[]>('/shifts'),
         api.get<LeaveRequest[]>('/me/leaves'),
         api.get<{ lateToleranceMinutes: number }>('/settings'),
+        api.get<MyDocuments>('/me/documents').catch(() => ({ letters: [], slips: [], unread: 0 }) as MyDocuments),
       ]),
     [today],
   );
@@ -50,7 +52,7 @@ export default function BerandaKaryawan() {
     );
   }
 
-  const [recap, sched, shifts, leaves, settings] = data;
+  const [recap, sched, shifts, leaves, settings, docs] = data;
   const lateTolerance = settings.lateToleranceMinutes;
   const todayRecord = recap.days.find((d) => d.date === today);
   const todayShiftRef = sched.schedules.find((s) => s.date === today)?.shift ?? null;
@@ -138,6 +140,15 @@ export default function BerandaKaryawan() {
 
   return (
     <div className="space-y-6">
+      {docs.unread > 0 && (
+        <Link to="/app/dokumen" className="flex items-center gap-3 rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-900 hover:bg-rose-100">
+          <Icon name="fileText" className="h-5 w-5 shrink-0" />
+          <span className="flex-1">
+            Ada <b>{docs.unread} dokumen</b> dari perusahaan (surat / slip upah) yang perlu Anda buka dan konfirmasi.
+          </span>
+          <Icon name="chevronRight" className="h-4 w-4" />
+        </Link>
+      )}
       <section className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-brand-700 via-brand-800 to-brand-950 p-5 text-white shadow-pop sm:p-7">
         <div className="pointer-events-none absolute -right-16 -top-16 h-56 w-56 rounded-full bg-brand-400/20 blur-2xl" />
         <div className="relative">

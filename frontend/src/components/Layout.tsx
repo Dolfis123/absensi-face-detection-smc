@@ -35,6 +35,7 @@ export const NAV_GROUPS: Record<Role, NavGroup[]> = {
       items: [
         { to: '/app/izin', label: 'Izin / Sakit / Cuti', icon: 'send', short: 'Izin' },
         { to: '/app/kendala', label: 'Lapor Kendala', icon: 'alert', short: 'Kendala' },
+        { to: '/app/dokumen', label: 'Surat & Slip Saya', icon: 'fileText', short: 'Dokumen' },
       ],
     },
   ],
@@ -54,6 +55,7 @@ export const NAV_GROUPS: Record<Role, NavGroup[]> = {
         { to: '/app/jadwal', label: 'Jadwal Saya', icon: 'calendar' },
         { to: '/app/izin', label: 'Izin / Sakit / Cuti', icon: 'send' },
         { to: '/app/kendala', label: 'Lapor Kendala', icon: 'alert' },
+        { to: '/app/dokumen', label: 'Surat & Slip Saya', icon: 'fileText' },
       ],
     },
     {
@@ -106,6 +108,7 @@ export const NAV_GROUPS: Record<Role, NavGroup[]> = {
         { to: '/app/laporan', label: 'Laporan', icon: 'download' },
         { to: '/app/upah', label: 'Rekap Upah', icon: 'fileText' },
         { to: '/app/identitas', label: 'Identitas & Kop Surat', icon: 'shield' },
+        { to: '/app/sistem', label: 'Kesehatan Sistem', icon: 'activity' },
       ],
     },
   ],
@@ -136,7 +139,7 @@ function useCollapsed() {
 
 /** Jumlah izin & kendala yang menunggu tindakan (untuk lonceng notifikasi). */
 function usePendingCounts(role: Role) {
-  const [counts, setCounts] = useState<{ leaves: number; issues: number; discipline: number } | null>(null);
+  const [counts, setCounts] = useState<{ leaves: number; issues: number; discipline: number; system: number } | null>(null);
   const location = useLocation();
   useEffect(() => {
     if (role === 'KARYAWAN') return;
@@ -145,9 +148,11 @@ function usePendingCounts(role: Role) {
         api.get<LeaveRequest[]>('/leaves?status=PENDING'),
         api.get<AttendanceIssue[]>('/issues'),
         api.get<{ needAction: number }>('/discipline/overview').catch(() => ({ needAction: 0 })),
+        role === 'SUPER_ADMIN' ? api.get<unknown[]>('/system/alerts/active').catch(() => []) : Promise.resolve([]),
       ])
-        .then(([leaves, issues, discipline]) =>
+        .then(([leaves, issues, discipline, system]) =>
           setCounts({
+            system: system.length,
             discipline: discipline.needAction,
             leaves: leaves.length,
             issues: issues.filter((i) => i.status === 'OPEN' || (role === 'SUPER_ADMIN' && i.status === 'ESCALATED')).length,
@@ -172,7 +177,7 @@ function Bell({ role }: { role: Role }) {
     return () => document.removeEventListener('mousedown', onDoc);
   }, []);
   if (role === 'KARYAWAN') return null;
-  const total = (counts?.leaves ?? 0) + (counts?.issues ?? 0) + (counts?.discipline ?? 0);
+  const total = (counts?.leaves ?? 0) + (counts?.issues ?? 0) + (counts?.discipline ?? 0) + (counts?.system ?? 0);
 
   return (
     <div className="relative" ref={ref}>
@@ -200,6 +205,7 @@ function Bell({ role }: { role: Role }) {
               n: counts?.issues ?? 0,
             },
             { to: '/app/disiplin', icon: 'userX' as const, label: 'Karyawan Alfa perlu tindakan', n: counts?.discipline ?? 0 },
+            ...(role === 'SUPER_ADMIN' ? [{ to: '/app/sistem', icon: 'activity' as const, label: 'Peringatan sistem aktif', n: counts?.system ?? 0 }] : []),
           ].map((it) => (
             <Link key={it.to} to={it.to} onClick={() => setOpen(false)} className="flex items-center gap-3 px-4 py-3 text-sm hover:bg-slate-50">
               <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100 text-slate-500">

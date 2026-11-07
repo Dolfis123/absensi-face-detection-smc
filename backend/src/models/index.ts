@@ -910,4 +910,101 @@ NotWorkingMark.belongsTo(User, { foreignKey: 'userId', as: 'user' });
 NotWorkingMark.belongsTo(User, { foreignKey: 'createdById', as: 'createdBy' });
 NotWorkingMark.belongsTo(User, { foreignKey: 'cancelledById', as: 'cancelledBy' });
 
+// ───────────────────────────── Tanda terima digital (surat & slip) ─────────────────────────────
+export const RECEIPT_KINDS = ['LETTER', 'SLIP'] as const;
+export type ReceiptKind = (typeof RECEIPT_KINDS)[number];
+/**
+ * Bukti petugas sudah membuka / menerima dokumen. LETTER: refId = id surat disiplin.
+ * SLIP: refId = id terbitan slip bulanan, version = versi terbitan yang diterima.
+ */
+export class DocumentReceipt extends Model<InferAttributes<DocumentReceipt>, InferCreationAttributes<DocumentReceipt>> {
+  declare id: CreationOptional<number>;
+  declare kind: ReceiptKind;
+  declare refId: number;
+  declare version: number;
+  declare userId: number;
+  declare openedAt: Date | null;
+  declare receivedAt: Date | null;
+  declare userAgent: string | null;
+  declare createdAt: CreationOptional<Date>;
+  declare updatedAt: CreationOptional<Date>;
+}
+DocumentReceipt.init(
+  {
+    id: { type: DataTypes.INTEGER.UNSIGNED, autoIncrement: true, primaryKey: true },
+    kind: { type: DataTypes.ENUM(...RECEIPT_KINDS), allowNull: false },
+    refId: { type: DataTypes.INTEGER.UNSIGNED, allowNull: false },
+    version: { type: DataTypes.INTEGER.UNSIGNED, allowNull: false, defaultValue: 1 },
+    userId: { type: DataTypes.INTEGER.UNSIGNED, allowNull: false, references: { model: 'users', key: 'id' } },
+    openedAt: { type: DataTypes.DATE, allowNull: true },
+    receivedAt: { type: DataTypes.DATE, allowNull: true },
+    userAgent: { type: DataTypes.STRING(255), allowNull: true },
+    createdAt: DataTypes.DATE,
+    updatedAt: DataTypes.DATE,
+  },
+  { sequelize, tableName: 'document_receipts', indexes: [{ unique: true, fields: ['kind', 'ref_id', 'user_id', 'version'] }] },
+);
+
+/** Slip upah yang diterbitkan Super Admin untuk dilihat petugas (salinan tetap, tidak berubah walau data dikoreksi). */
+export class PayrollPublication extends Model<InferAttributes<PayrollPublication>, InferCreationAttributes<PayrollPublication>> {
+  declare id: CreationOptional<number>;
+  declare month: string; // YYYY-MM
+  declare version: number;
+  declare rows: unknown[];
+  declare meta: Record<string, unknown>;
+  declare publishedById: number;
+  declare publishedAt: Date;
+  declare withdrawnAt: Date | null;
+}
+const jsonGetter = <T>(field: string, empty: T) =>
+  function (this: Model) {
+    const v = this.getDataValue(field) as unknown;
+    return typeof v === 'string' ? (JSON.parse(v) as T) : ((v as T | null) ?? empty);
+  };
+PayrollPublication.init(
+  {
+    id: { type: DataTypes.INTEGER.UNSIGNED, autoIncrement: true, primaryKey: true },
+    month: { type: DataTypes.STRING(7), allowNull: false, unique: true },
+    version: { type: DataTypes.INTEGER.UNSIGNED, allowNull: false, defaultValue: 1 },
+    rows: { type: DataTypes.JSON, allowNull: false, get: jsonGetter<unknown[]>('rows', []) },
+    meta: { type: DataTypes.JSON, allowNull: false, get: jsonGetter<Record<string, unknown>>('meta', {}) },
+    publishedById: { type: DataTypes.INTEGER.UNSIGNED, allowNull: false, references: { model: 'users', key: 'id' } },
+    publishedAt: { type: DataTypes.DATE, allowNull: false },
+    withdrawnAt: { type: DataTypes.DATE, allowNull: true },
+  },
+  { sequelize, tableName: 'payroll_publications', timestamps: false },
+);
+
+// ───────────────────────────── Peringatan sistem untuk Super Admin ─────────────────────────────
+export const ALERT_LEVELS = ['CRITICAL', 'WARNING', 'INFO'] as const;
+export type AlertLevel = (typeof ALERT_LEVELS)[number];
+/** Satu baris per kejadian; `key` mengelompokkan kondisi yang sama (mis. face-service mati). */
+export class SystemAlert extends Model<InferAttributes<SystemAlert>, InferCreationAttributes<SystemAlert>> {
+  declare id: CreationOptional<number>;
+  declare key: string;
+  declare level: AlertLevel;
+  declare title: string;
+  declare message: string;
+  declare active: boolean;
+  declare firstAt: Date;
+  declare lastAt: Date;
+  declare resolvedAt: Date | null;
+  declare notifiedAt: Date | null;
+}
+SystemAlert.init(
+  {
+    id: { type: DataTypes.INTEGER.UNSIGNED, autoIncrement: true, primaryKey: true },
+    key: { type: DataTypes.STRING(60), allowNull: false },
+    level: { type: DataTypes.ENUM(...ALERT_LEVELS), allowNull: false },
+    title: { type: DataTypes.STRING(150), allowNull: false },
+    message: { type: DataTypes.TEXT, allowNull: false },
+    active: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: true },
+    firstAt: { type: DataTypes.DATE, allowNull: false },
+    lastAt: { type: DataTypes.DATE, allowNull: false },
+    resolvedAt: { type: DataTypes.DATE, allowNull: true },
+    notifiedAt: { type: DataTypes.DATE, allowNull: true },
+  },
+  { sequelize, tableName: 'system_alerts', timestamps: false, indexes: [{ fields: ['key', 'active'] }, { fields: ['first_at'] }] },
+);
+
 export { sequelize };

@@ -41,11 +41,20 @@ interface PayRow {
   takeHome: number;
   heavyDeduction: boolean;
 }
+interface Publication {
+  id: number;
+  version: number;
+  publishedAt: string;
+  withdrawnAt: string | null;
+  total: number;
+  received: Record<number, string>;
+}
 interface MonthData {
   rows: PayRow[];
   settings: Settings;
   until: string;
   partial: boolean;
+  publication: Publication | null;
 }
 interface Wage {
   userId: number;
@@ -56,6 +65,7 @@ interface Wage {
   custom: boolean;
 }
 
+const when = (iso: string) => new Date(iso).toLocaleString('id-ID', { timeZone: 'Asia/Jayapura', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
 const rp = (n: number) => `Rp ${Math.round(n).toLocaleString('id-ID')}`;
 const fileSafe = (s: string) => s.replace(/[^\w]+/g, '-');
 const RANK_CLS = ['bg-amber-100 text-amber-800', 'bg-slate-200 text-slate-800', 'bg-orange-100 text-orange-800'];
@@ -87,7 +97,7 @@ function Rekap() {
   const today = todayWIT();
   // Bawaan: bulan lalu bila masih awal bulan (≤ tgl 5), selain itu bulan berjalan
   const [month, setMonth] = useState(Number(today.slice(8, 10)) <= 5 ? addDays(`${today.slice(0, 7)}-01`, -1).slice(0, 7) : today.slice(0, 7));
-  const { data, error, loading } = useLoad(() => api.get<MonthData>(`/payroll/months/${month}`), [month]);
+  const { data, error, loading, reload } = useLoad(() => api.get<MonthData>(`/payroll/months/${month}`), [month]);
   const [busy, setBusy] = useState<string | null>(null);
 
   async function dl(url: string, name: string, key: string) {
@@ -137,6 +147,7 @@ function Rekap() {
               Bulan masih berjalan — data dihitung sampai {fmtDate(data.until, false)}. Angka akhir baru tetap setelah bulan selesai.
             </Alert>
           )}
+          <PublishCard month={month} data={data} onChange={reload} />
           {s && !s.lateDeduction.enabled && (
             <Alert kind="info">
               Potongan terlambat <b>tidak aktif</b>. Kolom "Simulasi terlambat" hanya menunjukkan berapa potongannya bila aturan ({s.lateDeduction.perCount}× terlambat ={' '}
@@ -193,6 +204,7 @@ function Rekap() {
                     <Th className="text-right">Potongan</Th>
                     <Th className="text-right">Bonus</Th>
                     <Th className="text-right">Diterima</Th>
+                    {data.publication && !data.publication.withdrawnAt && <Th>Slip</Th>}
                     <Th />
                   </tr>
                 </thead>
@@ -240,6 +252,15 @@ function Rekap() {
                         {rp(r.takeHome)}
                         {r.heavyDeduction && <div className="text-xs font-normal text-rose-700">Potongan &gt; 50% — cek HRD</div>}
                       </Td>
+                      {data.publication && !data.publication.withdrawnAt && (
+                        <Td className="whitespace-nowrap text-xs">
+                          {data.publication.received[r.user.id] ? (
+                            <span className="text-emerald-700">✓ {when(data.publication.received[r.user.id])}</span>
+                          ) : (
+                            <span className="text-amber-700">Belum dikonfirmasi</span>
+                          )}
+                        </Td>
+                      )}
                       <Td>
                         <Button
                           variant="secondary"
@@ -442,5 +463,62 @@ function Pengaturan() {
         </Button>
       </div>
     </div>
+  );
+}
+
+/** Terbitkan / tarik slip ke akun petugas, dan progres tanda terimanya. */
+function PublishCard({ month, data, onChange }: { month: string; data: MonthData; onChange: () => void }) {
+  const { toast } = useFeedback();
+  const [busy, setBusy] = useState(false);
+  const pub = data.publication && !data.publication.withdrawnAt ? data.publication : null;
+  const got = pub ? Object.keys(pub.received).length : 0;
+
+  async function call(action: 'publish' | 'withdraw', msg: string) {
+    if (action === 'publish' && pub && !window.confirm('Terbitkan ulang slip? Petugas akan diminta mengonfirmasi slip versi terbaru.')) return;
+    if (action === 'withdraw' && !window.confirm('Tarik slip dari akun petugas? Tanda terima yang sudah ada tetap tersimpan.')) return;
+    setBusy(true);
+    try {
+      await api.post(`/payroll/months/${month}/${action}`);
+      toast(msg);
+      onChange();
+    } catch (e) {
+      toast(errMsg(e), 'error');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Card>
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="min-w-0 flex-1 text-sm">
+          {pub ? (
+            <>
+              <p className="font-semibold text-slate-900">
+                Slip sudah diterbitkan ke akun petugas{pub.version > 1 ? ` (versi ${pub.version})` : ''} · {when(pub.publishedAt)} WIT
+              </p>
+              <p className="text-slate-600">
+                Dikonfirmasi diterima: <b>{got}</b> dari {pub.total} petugas
+              </p>
+            </>
+          ) : (
+            <>
+              <p className="font-semibold text-slate-900">Slip belum terlihat oleh petugas</p>
+              <p className="text-slate-600">
+                {data.partial ? 'Slip bisa diterbitkan setelah bulan selesai.' : 'Terbitkan supaya tiap petugas bisa membuka slipnya sendiri dan mengonfirmasi penerimaan.'}
+              </p>
+            </>
+          )}
+        </div>
+        <Button icon="send" disabled={data.partial || !data.rows.length} loading={busy} onClick={() => call('publish', pub ? 'Slip diterbitkan ulang' : 'Slip diterbitkan ke akun petugas')}>
+          {pub ? 'Terbitkan ulang' : 'Terbitkan slip ke petugas'}
+        </Button>
+        {pub && (
+          <Button variant="ghost" disabled={busy} onClick={() => call('withdraw', 'Slip ditarik dari akun petugas')}>
+            Tarik
+          </Button>
+        )}
+      </div>
+    </Card>
   );
 }

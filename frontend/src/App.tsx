@@ -15,6 +15,8 @@ import PengaturanShift from './pages/admin/PengaturanShift';
 import Roster from './pages/admin/Roster';
 import Upah from './pages/admin/Upah';
 import Identitas from './pages/admin/Identitas';
+import Sistem from './pages/admin/Sistem';
+import Dokumen from './pages/karyawan/Dokumen';
 import RosterOtomatis from './pages/admin/RosterOtomatis';
 import OperasionalPengelola from './pages/parkir/Pengelola';
 import Disiplin from './pages/shared/Disiplin';
@@ -83,6 +85,8 @@ export default function App() {
         <Route path="roster-otomatis" element={<Guard roles={ADMIN}><RosterOtomatis /></Guard>} />
         <Route path="upah" element={<Guard roles={ADMIN}><Upah /></Guard>} />
         <Route path="identitas" element={<Guard roles={ADMIN}><Identitas /></Guard>} />
+        <Route path="sistem" element={<Guard roles={ADMIN}><Sistem /></Guard>} />
+        <Route path="dokumen" element={<Guard roles={EMPLOYEE}><Dokumen /></Guard>} />
         <Route path="koreksi" element={<Guard roles={ADMIN}><Koreksi /></Guard>} />
         <Route path="libur" element={<Guard roles={ADMIN}><Libur /></Guard>} />
         <Route path="geofence" element={<Guard roles={ADMIN}><Geofence /></Guard>} />

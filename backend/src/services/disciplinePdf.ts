@@ -30,6 +30,8 @@ export interface LetterData {
   /** Surat sebelumnya yang dirujuk (Peringatan Pertama untuk SP-2, Panggilan Pertama untuk Panggilan Kedua) */
   previous: { number: string; letterDate: string } | null;
   voided: boolean;
+  /** Baris tanda terima digital (bila petugas sudah mengonfirmasi) */
+  receivedText?: string | null;
 }
 
 export function sendDisciplinePdf(res: Response, L: LetterData, s: DisciplineSettings, filename: string) {
@@ -140,6 +142,12 @@ export function sendDisciplinePdf(res: Response, L: LetterData, s: DisciplineSet
   );
 
   signatures(doc, M, W, L, s);
+  if (L.receivedText) {
+    const bottom = doc.page.margins.bottom;
+    doc.page.margins.bottom = 0;
+    doc.font('Times-Italic').fontSize(8.5).fillColor(MUTED).text(L.receivedText, M, doc.page.height - 30, { width: W, align: 'center', lineBreak: false });
+    doc.page.margins.bottom = bottom;
+  }
 
   doc.end();
 }

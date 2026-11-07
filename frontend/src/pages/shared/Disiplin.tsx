@@ -46,8 +46,11 @@ interface Letter {
   createdBy: string;
   voidedAt: string | null;
   voidReason: string | null;
+  openedAt: string | null;
+  receivedAt: string | null;
 }
 
+const when = (iso: string) => new Date(iso).toLocaleString('id-ID', { timeZone: 'Asia/Jayapura', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
 const short = (d: string) => fmtDate(d, false).replace(/ \d{4}$/, '');
 const pdfName = (l: { number: string }) => `${l.number.replace(/\//g, '-')}.pdf`;
 
@@ -284,6 +287,7 @@ function SuratTerbit({ isAdmin }: { isAdmin: boolean }) {
               <Th>Karyawan</Th>
               <Th>Tanggal</Th>
               <Th>Dibuat oleh</Th>
+              <Th>Diterima petugas</Th>
               <Th />
             </tr>
           </thead>
@@ -303,6 +307,17 @@ function SuratTerbit({ isAdmin }: { isAdmin: boolean }) {
                   {l.reportDate && <div className="text-xs text-slate-500">Menghadap {short(l.reportDate)} {l.reportTime ?? ''}</div>}
                 </Td>
                 <Td className="text-sm">{l.createdBy}</Td>
+                <Td className="whitespace-nowrap text-xs">
+                  {l.receivedAt ? (
+                    <span className="font-medium text-emerald-700">✓ {when(l.receivedAt)}</span>
+                  ) : l.openedAt ? (
+                    <span className="text-amber-700">Dibuka {when(l.openedAt)}, belum dikonfirmasi</span>
+                  ) : l.voidedAt ? (
+                    '—'
+                  ) : (
+                    <span className="text-rose-700">Belum dibuka</span>
+                  )}
+                </Td>
                 <Td className="whitespace-nowrap">
                   <Button variant="secondary" icon="download" className="!px-2 !py-1 text-xs" onClick={() => downloadFile(`/discipline/letters/${l.id}/pdf`, pdfName(l)).catch((e) => toast(errMsg(e), 'error'))}>
                     PDF

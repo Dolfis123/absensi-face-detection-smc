@@ -11,7 +11,7 @@ import {
   letterNumber,
   recommend,
 } from '../services/discipline';
-import { sendDisciplinePdf } from '../services/disciplinePdf';
+import { receiptsFor, sendLetterPdf } from '../services/receipts';
 import { buildRecap } from '../services/recapService';
 import { ah, HttpError } from '../utils/http';
 import { addDays, DATE_RE, witNow } from '../utils/time';
@@ -27,7 +27,7 @@ const POSITION: Record<string, string> = { KARYAWAN: 'Petugas Parkir', KOORDINAT
 const LOOKBACK_DAYS = 45;
 
 /** Analisis Alfa semua karyawan aktif + saran tindakan; dipakai daftar & lonceng. */
-async function overview() {
+export async function overview() {
   const now = witNow();
   const month = now.date.slice(0, 7);
   const [recap, letters] = await Promise.all([
@@ -65,9 +65,12 @@ router.get(
     const letters = await DisciplineLetter.findAll({ order: [['letterDate', 'DESC'], ['id', 'DESC']], limit: 300 });
     const users = await User.findAll({ where: { id: [...new Set(letters.flatMap((l) => [l.userId, l.createdById]))] }, attributes: ['id', 'fullName', 'nik'] });
     const name = new Map(users.map((u) => [u.id, u]));
+    const receipts = await receiptsFor('LETTER', letters.map((l) => l.id), 1);
     res.json(
       letters.map((l) => ({
         ...l.toJSON(),
+        openedAt: receipts.get(`${l.id}|${l.userId}|1`)?.openedAt ?? null,
+        receivedAt: receipts.get(`${l.id}|${l.userId}|1`)?.receivedAt ?? null,
         title: LETTER_TITLE[l.type],
         employee: name.get(l.userId)?.fullName ?? '?',
         nik: name.get(l.userId)?.nik ?? '',
@@ -149,33 +152,7 @@ router.get(
   ah(async (req, res) => {
     const l = await DisciplineLetter.findByPk(Number(req.params.id));
     if (!l) throw new HttpError(404, 'Surat tidak ditemukan');
-    const [user, settings] = await Promise.all([User.findByPk(l.userId), getDisciplineSettings()]);
-    // Surat yang dirujuk: Peringatan Pertama untuk SP-2, Panggilan Pertama untuk Panggilan Kedua
-    const prevType = l.type === 'PERINGATAN_2' ? 'PERINGATAN_1' : l.type === 'PANGGILAN_2' ? 'PANGGILAN_1' : null;
-    const prev = prevType
-      ? await DisciplineLetter.findOne({
-          where: { userId: l.userId, type: prevType, voidedAt: null, letterDate: { [Op.lte]: l.letterDate }, id: { [Op.ne]: l.id } },
-          order: [['letterDate', 'DESC']],
-        })
-      : null;
-    sendDisciplinePdf(
-      res,
-      {
-        type: l.type,
-        number: l.number,
-        letterDate: l.letterDate,
-        alfaDates: l.alfaDates,
-        reportDate: l.reportDate,
-        reportTime: l.reportTime,
-        reportPlace: l.reportPlace,
-        note: l.note,
-        employee: { fullName: user?.fullName ?? '?', nik: user?.nik ?? '', position: POSITION[user?.role ?? ''] ?? '-' },
-        previous: prev && { number: prev.number, letterDate: prev.letterDate },
-        voided: !!l.voidedAt,
-      },
-      settings,
-      `${l.number.replace(/\//g, '-')}_${(user?.fullName ?? 'karyawan').replace(/[^\w]+/g, '-')}.pdf`,
-    );
+    await sendLetterPdf(res, l);
   }),
 );
 

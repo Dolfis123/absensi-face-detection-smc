@@ -36,6 +36,9 @@ cd "$APP_DIR/backend" && npm ci && npm run build
 step "Frontend"
 cd "$APP_DIR/frontend" && npm ci && npm run build
 
+step "Watchdog (peringatan bila aplikasi mati, tiap 5 menit)"
+echo "*/5 * * * * root bash $APP_DIR/deploy/watchdog.sh >/dev/null 2>&1" > /etc/cron.d/smc-watchdog
+
 step "Restart service"
 cp "$APP_DIR"/deploy/systemd/*.service /etc/systemd/system/
 systemctl daemon-reload
