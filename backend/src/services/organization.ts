@@ -112,41 +112,48 @@ export function formatLetterNumber(s: Pick<OrgSettings, 'numberFormat' | 'number
   return s.numberFormat.replace(/\{(\w+)\}/g, (m, k: string) => tokens[k] ?? m).replace(/\/{2,}/g, '/').replace(/^\/|\/$/g, '');
 }
 
-// ── Logo kop surat (berkas di folder upload) ──
-const logoDir = () => path.resolve(env.uploadDir, 'org');
-const LOGO_NAMES = ['logo.png', 'logo.jpg'];
+// ── Gambar dokumen (berkas di folder upload): logo kop & cap/stempel tanda tangan ──
+export type OrgImage = 'logo' | 'stamp';
+const imgDir = () => path.resolve(env.uploadDir, 'org');
+const names = (kind: OrgImage) => [`${kind}.png`, `${kind}.jpg`];
 
-/** Path logo bila ada, untuk digambar di PDF */
-export function logoPath(): string | null {
-  for (const n of LOGO_NAMES) {
-    const p = path.join(logoDir(), n);
+/** Path gambar bila ada, untuk digambar di PDF */
+export function imagePath(kind: OrgImage): string | null {
+  for (const n of names(kind)) {
+    const p = path.join(imgDir(), n);
     if (fs.existsSync(p)) return p;
   }
   return null;
 }
+export const logoPath = () => imagePath('logo');
 
-export function saveLogo(dataUrl: string) {
+export function saveImage(kind: OrgImage, dataUrl: string) {
   const m = /^data:image\/(png|jpe?g);base64,([A-Za-z0-9+/=]+)$/.exec(dataUrl);
-  if (!m) throw new HttpError(400, 'Logo harus berupa gambar PNG atau JPG');
+  if (!m) throw new HttpError(400, 'Gambar harus berupa PNG atau JPG');
   const buf = Buffer.from(m[2], 'base64');
-  if (buf.length > 1_000_000) throw new HttpError(400, 'Ukuran logo maksimal 1 MB');
-  fs.mkdirSync(logoDir(), { recursive: true });
-  removeLogo();
-  fs.writeFileSync(path.join(logoDir(), m[1] === 'png' ? 'logo.png' : 'logo.jpg'), buf);
+  if (buf.length > 1_000_000) throw new HttpError(400, 'Ukuran gambar maksimal 1 MB');
+  fs.mkdirSync(imgDir(), { recursive: true });
+  removeImage(kind);
+  fs.writeFileSync(path.join(imgDir(), `${kind}.${m[1] === 'png' ? 'png' : 'jpg'}`), buf);
 }
 
-export function removeLogo() {
-  for (const n of LOGO_NAMES) fs.rmSync(path.join(logoDir(), n), { force: true });
+export function removeImage(kind: OrgImage) {
+  for (const n of names(kind)) fs.rmSync(path.join(imgDir(), n), { force: true });
 }
 
 /** Gambar logo (bila ada) di dalam kotak; mengembalikan lebar yang terpakai (0 bila tanpa logo). */
 export function drawLogo(doc: PDFKit.PDFDocument, x: number, y: number, size: number): number {
-  const p = logoPath();
-  if (!p) return 0;
+  return drawImage(doc, 'logo', x, y, size, size) ? size : 0;
+}
+
+/** Gambar dalam kotak w×h (dipusatkan); false bila tidak ada / berkas rusak (dokumen tetap tercetak). */
+export function drawImage(doc: PDFKit.PDFDocument, kind: OrgImage, x: number, y: number, w: number, h: number): boolean {
+  const p = imagePath(kind);
+  if (!p) return false;
   try {
-    doc.image(p, x, y, { fit: [size, size], align: 'center', valign: 'center' });
-    return size;
+    doc.image(p, x, y, { fit: [w, h], align: 'center', valign: 'center' });
+    return true;
   } catch {
-    return 0; // berkas rusak: dokumen tetap tercetak tanpa logo
+    return false;
   }
 }

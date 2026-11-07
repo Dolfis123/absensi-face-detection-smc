@@ -28,8 +28,9 @@ interface Org {
   callCode: string;
   defaultReportPlace: string;
   hasLogo?: boolean;
+  hasStamp?: boolean;
 }
-type TextKey = Exclude<keyof Org, 'showManagementSign' | 'hasLogo'>;
+type TextKey = Exclude<keyof Org, 'showManagementSign' | 'hasLogo' | 'hasStamp'>;
 
 /** Identitas pengelola, kop surat, nomor surat, dan penandatangan — dipakai semua dokumen PDF/Excel. */
 export default function Identitas() {
@@ -38,8 +39,6 @@ export default function Identitas() {
   const [f, setF] = useState<Org | null>(null);
   const [saving, setSaving] = useState(false);
   const [preview, setPreview] = useState<{ warning: string; call: string } | null>(null);
-  const [logoVer, setLogoVer] = useState(0);
-  const [logoUrl, setLogoUrl] = useState<string | null>(null);
 
   useEffect(() => {
     if (data) setF(data);
@@ -59,21 +58,6 @@ export default function Identitas() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fmt]);
 
-  // Logo dimuat lewat fetch (bukan <img src>) supaya selalu versi terbaru
-  useEffect(() => {
-    let url: string | null = null;
-    if (!data?.hasLogo && logoVer === 0) return setLogoUrl(null);
-    fetch(`/api/organization/logo?v=${logoVer}`, { headers: { Authorization: `Bearer ${tokenStore.get() ?? ''}` } })
-      .then((r) => (r.ok ? r.blob() : null))
-      .then((b) => {
-        url = b ? URL.createObjectURL(b) : null;
-        setLogoUrl(url);
-      });
-    return () => {
-      if (url) URL.revokeObjectURL(url);
-    };
-  }, [data?.hasLogo, logoVer]);
-
   if (!f) return <Loading />;
 
   const field = (k: TextKey, label: string, hint?: string, placeholder?: string) => (
@@ -85,7 +69,7 @@ export default function Identitas() {
   async function save() {
     setSaving(true);
     try {
-      const { hasLogo: _h, ...body } = f!;
+      const { hasLogo: _h, hasStamp: _s, ...body } = f!;
       setF(await api.put<Org>('/organization', body));
       refreshOrg();
       toast('Identitas & kop surat disimpan. Dokumen berikutnya memakai data baru.');
@@ -93,42 +77,6 @@ export default function Identitas() {
       toast(errMsg(e), 'error');
     } finally {
       setSaving(false);
-    }
-  }
-
-  async function onLogo(e: ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    e.target.value = '';
-    if (!file) return;
-    if (!/^image\/(png|jpeg)$/.test(file.type)) return toast('Logo harus PNG atau JPG', 'error');
-    if (file.size > 1_000_000) return toast('Ukuran logo maksimal 1 MB', 'error');
-    const image = await new Promise<string>((ok, fail) => {
-      const r = new FileReader();
-      r.onload = () => ok(String(r.result));
-      r.onerror = fail;
-      r.readAsDataURL(file);
-    });
-    try {
-      await api.put('/organization/logo', { image });
-      setLogoVer((v) => v + 1);
-      refreshOrg();
-      reload();
-      toast('Logo kop surat diperbarui');
-    } catch (err) {
-      toast(errMsg(err), 'error');
-    }
-  }
-
-  async function deleteLogo() {
-    try {
-      await api.del('/organization/logo');
-      setLogoUrl(null);
-      setLogoVer(0);
-      refreshOrg();
-      reload();
-      toast('Logo dihapus');
-    } catch (err) {
-      toast(errMsg(err), 'error');
     }
   }
 
@@ -149,24 +97,7 @@ export default function Identitas() {
             {field('companyName', 'Nama perusahaan', undefined, 'mis. CV. DEVA JAYA')}
             {field('companyAddress', 'Alamat')}
             {field('companyContact', 'Kontak (opsional)', 'Telepon / email / NPWP — baris kecil di kop')}
-            <Field label="Logo (opsional)" hint="PNG atau JPG, maks. 1 MB. Tampil di kiri kop surat dan di piagam.">
-              <div className="flex flex-wrap items-center gap-3">
-                {logoUrl ? (
-                  <img src={logoUrl} alt="Logo" className="h-14 w-14 rounded-lg border border-slate-200 bg-white object-contain p-1" />
-                ) : (
-                  <div className="flex h-14 w-14 items-center justify-center rounded-lg border border-dashed border-slate-300 text-[10px] text-slate-400">Tanpa logo</div>
-                )}
-                <label className="cursor-pointer rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium hover:bg-slate-50">
-                  {logoUrl ? 'Ganti logo' : 'Unggah logo'}
-                  <input type="file" accept="image/png,image/jpeg" className="hidden" onChange={onLogo} />
-                </label>
-                {logoUrl && (
-                  <Button variant="ghost" className="!px-2 !py-1 text-xs" onClick={deleteLogo}>
-                    Hapus logo
-                  </Button>
-                )}
-              </div>
-            </Field>
+            <ImageField kind="logo" label="Logo (opsional)" hint="PNG atau JPG, maks. 1 MB. Tampil di kiri kop surat dan di piagam." initial={!!data?.hasLogo} onChange={() => { refreshOrg(); reload(); }} />
           </div>
         </Card>
 
@@ -182,6 +113,9 @@ export default function Identitas() {
 
         <Card title="Penandatangan" subtitle="Kosongkan nama bila ingin ditulis tangan saat penandatanganan">
           <div className="space-y-3">
+            <p className="rounded-lg bg-slate-50 p-2 text-xs text-slate-600">
+              Surat peringatan & panggilan: satu tanda tangan di tengah — <b>{f.showManagementSign ? `"Mengetahui, ${f.managementTitle || '…'}"` : `"Hormat kami, ${f.companyName || '…'}"`}</b>, cap/stempel (bila diunggah), lalu nama & jabatan pihak perusahaan.
+            </p>
             <div className="grid grid-cols-2 gap-2">
               {field('hrdName', 'Nama (pihak perusahaan)')}
               {field('hrdTitle', 'Jabatan', undefined, 'mis. HRD/Admin Manager')}
@@ -192,7 +126,7 @@ export default function Identitas() {
             </div>
             <label className="flex items-center gap-2 text-sm font-medium">
               <input type="checkbox" className="h-4 w-4 rounded border-slate-300" checked={f.showManagementSign} onChange={(e) => setF({ ...f, showManagementSign: e.target.checked })} />
-              Tampilkan tanda tangan pemilik tempat (mengetahui)
+              Tampilkan pemilik tempat sebagai "Mengetahui"
             </label>
             {f.showManagementSign && (
               <div className="grid grid-cols-2 gap-2">
@@ -200,6 +134,7 @@ export default function Identitas() {
                 {field('managementTitle', 'Jabatan / instansi', undefined, 'mis. Manajemen Mall Sorong Modern City')}
               </div>
             )}
+            <ImageField kind="stamp" label="Cap / stempel tanda tangan (opsional)" hint="PNG/JPG maks. 1 MB, sebaiknya latar transparan. Tampil di samping tanda tangan surat." initial={!!data?.hasStamp} onChange={reload} wide />
             <div className="grid grid-cols-2 gap-2">
               {field('reportApproverName', 'Pengesah laporan bulanan')}
               {field('reportApproverTitle', 'Jabatan pengesah', undefined, 'mis. Manager Mal SMC')}
@@ -236,5 +171,86 @@ export default function Identitas() {
         </div>
       </div>
     </>
+  );
+}
+
+/** Unggah / ganti / hapus gambar dokumen (logo kop atau cap tanda tangan). */
+function ImageField({ kind, label, hint, initial, onChange, wide }: { kind: 'logo' | 'stamp'; label: string; hint: string; initial: boolean; onChange: () => void; wide?: boolean }) {
+  const { toast } = useFeedback();
+  const [ver, setVer] = useState(initial ? 1 : 0);
+  const [url, setUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (initial && ver === 0) setVer(1);
+  }, [initial, ver]);
+
+  // Dimuat lewat fetch (bukan <img src>) supaya selalu versi terbaru
+  useEffect(() => {
+    if (ver === 0) return setUrl(null);
+    let made: string | null = null;
+    fetch(`/api/organization/image/${kind}?v=${ver}`, { headers: { Authorization: `Bearer ${tokenStore.get() ?? ''}` } })
+      .then((r) => (r.ok ? r.blob() : null))
+      .then((b) => {
+        made = b ? URL.createObjectURL(b) : null;
+        setUrl(made);
+      });
+    return () => {
+      if (made) URL.revokeObjectURL(made);
+    };
+  }, [kind, ver]);
+
+  async function upload(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    if (!/^image\/(png|jpeg)$/.test(file.type)) return toast('Gambar harus PNG atau JPG', 'error');
+    if (file.size > 1_000_000) return toast('Ukuran gambar maksimal 1 MB', 'error');
+    const image = await new Promise<string>((ok, fail) => {
+      const r = new FileReader();
+      r.onload = () => ok(String(r.result));
+      r.onerror = fail;
+      r.readAsDataURL(file);
+    });
+    try {
+      await api.put(`/organization/image/${kind}`, { image });
+      setVer((v) => v + 1);
+      onChange();
+      toast(`${kind === 'logo' ? 'Logo' : 'Cap'} diperbarui`);
+    } catch (err) {
+      toast(errMsg(err), 'error');
+    }
+  }
+
+  async function remove() {
+    try {
+      await api.del(`/organization/image/${kind}`);
+      setVer(0);
+      onChange();
+      toast(`${kind === 'logo' ? 'Logo' : 'Cap'} dihapus`);
+    } catch (err) {
+      toast(errMsg(err), 'error');
+    }
+  }
+
+  const box = wide ? 'h-14 w-36' : 'h-14 w-14';
+  return (
+    <Field label={label} hint={hint}>
+      <div className="flex flex-wrap items-center gap-3">
+        {url ? (
+          <img src={url} alt={label} className={`${box} rounded-lg border border-slate-200 bg-white object-contain p-1`} />
+        ) : (
+          <div className={`${box} flex items-center justify-center rounded-lg border border-dashed border-slate-300 text-[10px] text-slate-400`}>Belum ada</div>
+        )}
+        <label className="cursor-pointer rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium hover:bg-slate-50">
+          {url ? 'Ganti' : 'Unggah'}
+          <input type="file" accept="image/png,image/jpeg" className="hidden" onChange={upload} />
+        </label>
+        {url && (
+          <Button variant="ghost" className="!px-2 !py-1 text-xs" onClick={remove}>
+            Hapus
+          </Button>
+        )}
+      </div>
+    </Field>
   );
 }

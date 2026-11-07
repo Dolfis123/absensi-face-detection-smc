@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { currentUser, requireAuth, requireRole } from '../middleware/auth';
-import { formatLetterNumber, getOrgSettings, logoPath, OrgSettings, removeLogo, saveLogo, saveOrgSettings } from '../services/organization';
+import { formatLetterNumber, getOrgSettings, imagePath, logoPath, OrgImage, OrgSettings, removeImage, saveImage, saveOrgSettings } from '../services/organization';
 import { ah, HttpError } from '../utils/http';
 import { witNow } from '../utils/time';
 
@@ -17,18 +17,29 @@ router.get(
   }),
 );
 
-router.get('/logo', (_req, res) => {
-  const p = logoPath();
-  if (!p) return res.status(404).json({ message: 'Logo belum diunggah' });
-  res.setHeader('Cache-Control', 'no-cache');
-  res.sendFile(p);
+const KINDS: OrgImage[] = ['logo', 'stamp'];
+const kindOf = (v: string): OrgImage => {
+  if (!KINDS.includes(v as OrgImage)) throw new HttpError(404, 'Endpoint tidak ditemukan');
+  return v as OrgImage;
+};
+
+/** Logo kop (publik, untuk halaman login) dan cap tanda tangan. */
+router.get('/image/:kind', (req, res, next) => {
+  try {
+    const p = imagePath(kindOf(req.params.kind));
+    if (!p) return res.status(404).json({ message: 'Gambar belum diunggah' });
+    res.setHeader('Cache-Control', 'no-cache');
+    res.sendFile(p);
+  } catch (e) {
+    next(e);
+  }
 });
 
 router.get(
   '/',
   requireAuth,
   ah(async (_req, res) => {
-    res.json({ ...(await getOrgSettings()), hasLogo: !!logoPath() });
+    res.json({ ...(await getOrgSettings()), hasLogo: !!logoPath(), hasStamp: !!imagePath('stamp') });
   }),
 );
 
@@ -65,7 +76,7 @@ router.put(
   ah(async (req, res) => {
     const body: OrgSettings = schema.parse(req.body);
     await saveOrgSettings(body, currentUser(req).id);
-    res.json({ ...body, hasLogo: !!logoPath() });
+    res.json({ ...body, hasLogo: !!logoPath(), hasStamp: !!imagePath('stamp') });
   }),
 );
 
@@ -82,23 +93,25 @@ router.post(
 );
 
 router.put(
-  '/logo',
+  '/image/:kind',
   requireAuth,
   requireRole('SUPER_ADMIN'),
   ah(async (req, res) => {
-    const { image } = z.object({ image: z.string().max(1_500_000, 'Ukuran logo maksimal 1 MB') }).parse(req.body);
-    saveLogo(image);
+    const kind = kindOf(req.params.kind);
+    const { image } = z.object({ image: z.string().max(1_500_000, 'Ukuran gambar maksimal 1 MB') }).parse(req.body);
+    saveImage(kind, image);
     res.json({ ok: true });
   }),
 );
 
 router.delete(
-  '/logo',
+  '/image/:kind',
   requireAuth,
   requireRole('SUPER_ADMIN'),
-  ah(async (_req, res) => {
-    if (!logoPath()) throw new HttpError(404, 'Logo belum diunggah');
-    removeLogo();
+  ah(async (req, res) => {
+    const kind = kindOf(req.params.kind);
+    if (!imagePath(kind)) throw new HttpError(404, 'Gambar belum diunggah');
+    removeImage(kind);
     res.json({ ok: true });
   }),
 );

@@ -5,7 +5,7 @@ import type { Response } from 'express';
 import PDFDocument from 'pdfkit';
 import type { LetterType } from '../models';
 import { DisciplineSettings, LETTER_TITLE } from './discipline';
-import { areaText, drawLogo, signDate } from './organization';
+import { areaText, drawImage, drawLogo, signDate } from './organization';
 import { fmtLongDate } from './pdfReport';
 
 const DAY = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
@@ -14,7 +14,8 @@ const INK = '#111827';
 const MUTED = '#4b5563';
 const RULE = '#9ca3af';
 const NUM_WORD = ['nol', 'satu', 'dua', 'tiga', 'empat', 'lima', 'enam', 'tujuh', 'delapan', 'sembilan', 'sepuluh'];
-const countText = (n: number) => (n <= 10 ? `${n} (${NUM_WORD[n]})` : String(n));
+const cap = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
+const countText = (n: number) => (n <= 10 ? `${n} (${cap(NUM_WORD[n])})` : String(n));
 
 export interface LetterData {
   type: LetterType;
@@ -100,7 +101,7 @@ export function sendDisciplinePdf(res: Response, L: LetterData, s: DisciplineSet
     para(
       L.type === 'PERINGATAN_1'
         ? 'Ketidakhadiran tersebut melanggar kewajiban hadir sesuai roster dan kewajiban mengajukan izin melalui aplikasi sebagaimana diatur dalam Perjanjian Kerja Waktu Tertentu (PKWT) Pasal 4 dan Pasal 8 serta Standar Operasional Prosedur (SOP) Parkiran BAB IV dan BAB V. Sesuai PKWT Pasal 8, Perusahaan dengan ini memberikan PERINGATAN PERTAMA kepada Saudara.'
-        : `Ketidakhadiran tersebut melanggar kewajiban hadir sesuai roster dan kewajiban mengajukan izin melalui aplikasi sebagaimana diatur dalam PKWT Pasal 4 dan Pasal 8 serta SOP Parkiran BAB IV dan BAB V${prevText ? `, dan terjadi setelah Saudara menerima Surat Peringatan Pertama ${prevText}` : ''}. Sesuai PKWT Pasal 8, Perusahaan dengan ini memberikan PERINGATAN KEDUA secara tertulis kepada Saudara.`,
+        : `Ketidakhadiran tersebut melanggar kewajiban hadir sesuai roster dan kewajiban mengajukan izin melalui aplikasi sebagaimana diatur dalam Perjanjian Kerja Waktu Tertentu (PKWT) Pasal 4 dan Pasal 8 serta Standar Operasional Prosedur (SOP) Parkiran BAB IV dan BAB V${prevText ? `, dan terjadi setelah Saudara menerima Surat Peringatan Pertama ${prevText}` : ''}. Sesuai PKWT Pasal 8, Perusahaan dengan ini memberikan PERINGATAN KEDUA secara tertulis kepada Saudara.`,
     );
     para('Sehubungan dengan peringatan ini, Saudara diminta untuk:', { align: 'left' });
     numbered(doc, M, W, [
@@ -139,18 +140,7 @@ export function sendDisciplinePdf(res: Response, L: LetterData, s: DisciplineSet
   );
 
   signatures(doc, M, W, L, s);
-  receipt(doc, M, W);
 
-  // ── Kaki halaman ──
-  const bottom = doc.page.margins.bottom;
-  doc.page.margins.bottom = 0;
-  doc.font('Times-Italic').fontSize(8).fillColor(MUTED).text(
-    `Tembusan: Arsip Kepegawaian ${s.companyName} · ${s.coordinatorTitle}${s.showManagementSign && s.managementTitle ? ` · ${s.managementTitle}` : ''}. Dokumen disusun dari catatan absensi online SMC-FaceAttend.`,
-    M,
-    doc.page.height - 36,
-    { width: W, align: 'center', height: 24, ellipsis: true },
-  );
-  doc.page.margins.bottom = bottom;
   doc.end();
 }
 
@@ -203,34 +193,26 @@ function callBox(doc: PDFKit.PDFDocument, M: number, W: number, rows: [string, s
   doc.y = y0 + h + 9;
 }
 
+/**
+ * Satu blok tanda tangan di tengah (format surat SMC): tanggal di kanan, lalu
+ * "Mengetahui, <pemilik tempat>" (atau "Hormat kami, <perusahaan>"), cap/stempel bila diunggah,
+ * nama penandatangan, dan jabatannya.
+ */
 function signatures(doc: PDFKit.PDFDocument, M: number, W: number, L: LetterData, s: DisciplineSettings) {
-  if (doc.y > doc.page.height - 40 - 112) doc.addPage();
-  const y0 = doc.y + 4;
-  // Tanpa tanda tangan manajemen tempat: dua kolom (Koordinator & Perusahaan)
-  const blocks: [string, string, string, string?][] = [
-    ['Mengetahui,', s.coordinatorTitle, s.coordinatorName],
-    ...(s.showManagementSign ? ([['Mengetahui,', s.managementTitle, s.managementName]] as [string, string, string][]) : []),
-    ['Hormat kami,', `${s.companyName}`, s.hrdName, s.hrdTitle],
-  ];
-  const colW = W / blocks.length;
-  doc.font('Times-Roman').fontSize(11).fillColor(INK).text(signDate(s, fmtLongDate(L.letterDate)), M + colW * (blocks.length - 1), y0, { width: colW, align: 'center' });
-  const yHead = y0 + 16;
-  blocks.forEach(([head, role, name, title], i) => {
-    const x = M + colW * i;
-    doc.font('Times-Roman').fontSize(11).fillColor(INK).text(head, x, yHead, { width: colW, align: 'center' });
-    doc.font('Times-Bold').fontSize(10.5).text(role, x + 6, yHead + 15, { width: colW - 12, align: 'center' });
-    const yName = yHead + 60;
-    doc.font('Times-Bold').fontSize(11).text(name ? name : '(.................................)', x + 6, yName, { width: colW - 12, align: 'center', underline: !!name });
-    if (title) doc.font('Times-Roman').fontSize(10).text(title, x + 6, doc.y + 1, { width: colW - 12, align: 'center' });
-  });
-  doc.y = yHead + 88;
-}
-
-function receipt(doc: PDFKit.PDFDocument, M: number, W: number) {
-  if (doc.y > doc.page.height - 40 - 42) doc.addPage();
+  if (doc.y > doc.page.height - 40 - 150) doc.addPage();
   const y0 = doc.y + 2;
-  doc.save().lineWidth(0.6).dash(3, { space: 3 }).strokeColor(RULE).roundedRect(M, y0, W, 40, 4).stroke().restore();
-  doc.font('Times-Bold').fontSize(10).fillColor(INK).text('TANDA TERIMA', M + 12, y0 + 7);
-  doc.font('Times-Roman').fontSize(10).text('Diterima tanggal ..............................   Tanda tangan & nama terang: ......................................................', M + 12, y0 + 22, { width: W - 24 });
-  doc.y = y0 + 44;
+  doc.font('Times-Roman').fontSize(11).fillColor(INK).text(signDate(s, fmtLongDate(L.letterDate, true)), M, y0, { width: W - 24, align: 'right' });
+  const bw = 220;
+  const bx = M + (W - bw) / 2;
+  const yHead = y0 + 34;
+  const head = s.showManagementSign && s.managementTitle ? ['Mengetahui,', s.managementTitle] : ['Hormat kami,', s.companyName];
+  doc.font('Times-Roman').fontSize(11).text(head[0], bx, yHead, { width: bw, align: 'center' });
+  doc.font('Times-Bold').fontSize(11).text(head[1], bx, doc.y + 1, { width: bw, align: 'center' });
+  const yName = Math.max(doc.y + 52, yHead + 82);
+  // Cap/stempel di kiri tanda tangan, sedikit menimpa area tanda tangan seperti cap basah
+  drawImage(doc, 'stamp', bx - 66, yName - 52, 150, 58);
+  const name = s.hrdName || s.managementName;
+  doc.font('Times-Bold').fontSize(11).fillColor(INK).text(name || '(.................................)', bx, yName, { width: bw, align: 'center', underline: !!name });
+  if (s.hrdTitle) doc.font('Times-Roman').fontSize(10.5).text(s.hrdTitle, bx, doc.y + 1, { width: bw, align: 'center' });
+  doc.y = doc.y + 6;
 }
