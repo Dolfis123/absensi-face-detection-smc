@@ -19,6 +19,7 @@ import { rankFaces } from '../services/faceClient';
 import { decideIdentity, matchPin } from '../services/identity';
 import { label, loadShifts, resolveActiveSlot } from '../services/shiftService';
 import { haversineMeters } from '../utils/geo';
+import { findActiveMark } from '../services/notWorking';
 import { ah, HttpError } from '../utils/http';
 import { witNow } from '../utils/time';
 
@@ -124,6 +125,9 @@ router.post(
       },
     });
     if (leave) throw new HttpError(409, `${user.fullName}, hari ini Anda tercatat ${leave.type}.`);
+    if (await findActiveMark(user.id, now.date)) {
+      throw new HttpError(409, `${user.fullName}, hari ini Anda ditandai TIDAK BEKERJA oleh Super Admin (dihitung Alfa). Hubungi Super Admin bila ada kekeliruan.`);
+    }
 
     // 5) Roster harian → slot aktif
     const schedule = await EmployeeSchedule.findOne({ where: { userId: user.id, date: now.date } });

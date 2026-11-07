@@ -1,6 +1,9 @@
 import { FormEvent, useState } from 'react';
+import { MarkNotWorkingModal } from '../../components/notWorking';
+import { useFeedback } from '../../components/feedback';
+import { Tabs } from '../parkir/shared';
 import { useLoad } from '../../components/attendance';
-import { Alert, Badge, Button, Card, Empty, Field, Input, Loading, PageHeader, Select, Table, Td, Textarea, Th } from '../../components/ui';
+import { Alert, Badge, Button, Card, Empty, Field, Input, Loading, Modal, PageHeader, PersonCell, Select, Table, Td, Textarea, Th } from '../../components/ui';
 import { api, AttendanceIssue, errMsg, PublicUser, SlotType } from '../../lib/api';
 import { fmtDate, SLOT_LABEL, todayWIT } from '../../lib/format';
 
@@ -17,7 +20,7 @@ interface AuditLogRow {
   targetUser: { fullName: string; nik: string };
 }
 
-export default function Koreksi() {
+function KoreksiAbsen() {
   const { data, error, loading, reload } = useLoad(() =>
     Promise.all([
       api.get<PublicUser[]>('/admin/users'),
@@ -72,10 +75,6 @@ export default function Koreksi() {
 
   return (
     <>
-      <PageHeader
-        title="Koreksi Darurat & Audit Trail"
-        subtitle="Data absensi tidak pernah dihapus. Koreksi = membatalkan catatan lama (VOID) dan/atau menambah catatan pengganti, wajib dengan alasan."
-      />
       <div className="grid gap-4 lg:grid-cols-5">
         <Card className="lg:col-span-2">
           <form onSubmit={submit} className="space-y-3">
@@ -185,6 +184,159 @@ export default function Koreksi() {
           )}
         </Card>
       </div>
+    </>
+  );
+}
+
+interface Mark {
+  id: number;
+  date: string;
+  reason: string;
+  voidedIds: number[];
+  createdAt: string;
+  cancelledAt: string | null;
+  cancelReason: string | null;
+  user: { id: number; fullName: string; nik: string };
+  createdBy: { fullName: string };
+  cancelledBy: { fullName: string } | null;
+}
+
+export default function Koreksi() {
+  const [tab, setTab] = useState<'tandai' | 'koreksi'>('tandai');
+  return (
+    <>
+      <PageHeader
+        title="Koreksi Darurat & Audit Trail"
+        subtitle="Data absensi tidak pernah dihapus. Koreksi = membatalkan catatan lama (VOID) dan/atau menambah catatan pengganti, wajib dengan alasan."
+      />
+      <Tabs
+        tabs={[
+          { key: 'tandai', label: 'Tandai Tidak Bekerja' },
+          { key: 'koreksi', label: 'Koreksi Absen & Riwayat' },
+        ]}
+        value={tab}
+        onChange={setTab}
+      />
+      {tab === 'tandai' ? <TandaiTidakBekerja /> : <KoreksiAbsen />}
+    </>
+  );
+}
+
+function TandaiTidakBekerja() {
+  const { toast } = useFeedback();
+  const { data, error, loading, reload } = useLoad(() => Promise.all([api.get<PublicUser[]>('/admin/users'), api.get<Mark[]>('/admin/not-working')]));
+  const [open, setOpen] = useState(false);
+  const [cancel, setCancel] = useState<Mark | null>(null);
+  const [reason, setReason] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  if (loading && !data) return <Loading />;
+  if (!data) return <Alert>{error}</Alert>;
+  const [users, marks] = data;
+  const employees = users.filter((u) => u.role !== 'SUPER_ADMIN' && u.isActive);
+
+  async function doCancel() {
+    if (!cancel) return;
+    setBusy(true);
+    try {
+      const r = await api.patch<{ restored: number }>(`/admin/not-working/${cancel.id}/cancel`, { reason });
+      toast(`Tanda dibatalkan, ${r.restored} absen dipulihkan`);
+      setCancel(null);
+      setReason('');
+      reload();
+    } catch (e) {
+      toast(errMsg(e), 'error');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <>
+      <Card
+        title="Petugas yang ditandai tidak bekerja"
+        subtitle="Hanya Super Admin. Hari yang ditandai dihitung Alfa: ikut Peringatan Disiplin dan potongan upah."
+        actions={
+          <Button variant="danger" icon="userX" onClick={() => setOpen(true)}>
+            Tandai Tidak Bekerja
+          </Button>
+        }
+      >
+        {marks.length === 0 ? (
+          <Empty icon="check" title="Belum ada petugas yang ditandai" />
+        ) : (
+          <Table>
+            <thead>
+              <tr>
+                <Th>Tanggal</Th>
+                <Th>Karyawan</Th>
+                <Th>Alasan</Th>
+                <Th>Oleh</Th>
+                <Th />
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 bg-white">
+              {marks.map((m) => (
+                <tr key={m.id} className={m.cancelledAt ? 'opacity-60' : ''}>
+                  <Td className="whitespace-nowrap">{fmtDate(m.date, false)}</Td>
+                  <Td>
+                    <PersonCell name={m.user.fullName} sub={m.user.nik} />
+                  </Td>
+                  <Td className="max-w-sm whitespace-normal text-sm">
+                    {m.reason}
+                    <div className="text-xs text-slate-500">{m.voidedIds.length} absen dibatalkan</div>
+                    {m.cancelledAt && (
+                      <div className="text-xs font-semibold text-emerald-700">
+                        Dibatalkan oleh {m.cancelledBy?.fullName}: {m.cancelReason}
+                      </div>
+                    )}
+                  </Td>
+                  <Td className="text-xs">
+                    {m.createdBy.fullName}
+                    <div className="text-slate-400">{new Date(m.createdAt).toLocaleString('id-ID', { timeZone: 'Asia/Jayapura' })}</div>
+                  </Td>
+                  <Td>
+                    {m.cancelledAt ? (
+                      <Badge className="bg-slate-100 text-slate-600">Dibatalkan</Badge>
+                    ) : (
+                      <>
+                        <Badge className="bg-rose-100 text-rose-800">Alfa</Badge>
+                        <Button variant="ghost" className="!px-2 !py-1 text-xs" onClick={() => setCancel(m)}>
+                          Batalkan
+                        </Button>
+                      </>
+                    )}
+                  </Td>
+                </tr>
+              ))}
+            </tbody>
+          </Table>
+        )}
+      </Card>
+      <MarkNotWorkingModal
+        open={open}
+        onClose={() => setOpen(false)}
+        onDone={() => {
+          setOpen(false);
+          reload();
+        }}
+        employees={employees}
+      />
+      <Modal open={!!cancel} title="Batalkan Tanda Tidak Bekerja" onClose={() => setCancel(null)}>
+        <div className="space-y-3">
+          <p className="text-sm">
+            {cancel && `${cancel.user.fullName} · ${fmtDate(cancel.date, false)}`} — absen yang tadinya dibatalkan akan dipulihkan dan hari itu tidak lagi dihitung Alfa.
+          </p>
+          <Field label="Alasan pembatalan">
+            <Textarea rows={2} value={reason} onChange={(e) => setReason(e.target.value)} maxLength={300} />
+          </Field>
+          <div className="flex justify-end">
+            <Button onClick={doCancel} loading={busy} disabled={reason.trim().length < 5}>
+              Batalkan Tanda
+            </Button>
+          </div>
+        </div>
+      </Modal>
     </>
   );
 }

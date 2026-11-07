@@ -14,6 +14,7 @@ import {
 import { eachDate, witNow } from '../utils/time';
 import { getBreakTrackingSince } from './settings';
 import { activeBreak, breakReturnDeadline, loadShifts, slotDeadline } from './shiftService';
+import { activeMarks } from './notWorking';
 
 export type DayStatus =
   | 'TEPAT_WAKTU'
@@ -130,7 +131,7 @@ export async function buildRecap(from: string, to: string, userIds?: number[]): 
   const ids = users.map((u) => u.id);
   if (ids.length === 0) return [];
 
-  const [shifts, schedules, attendances, leaves, holidays] = await Promise.all([
+  const [shifts, schedules, attendances, leaves, holidays, marks] = await Promise.all([
     loadShifts(),
     EmployeeSchedule.findAll({ where: { userId: ids, date: { [Op.between]: [from, to] } } }),
     Attendance.findAll({ where: { userId: ids, date: { [Op.between]: [from, to] }, active: true } }),
@@ -143,6 +144,7 @@ export async function buildRecap(from: string, to: string, userIds?: number[]): 
       },
     }),
     Holiday.findAll({ where: { date: { [Op.between]: [from, to] } } }),
+    activeMarks(from, to, ids),
   ]);
 
   const holidayByDate = new Map(holidays.map((h) => [h.date, h.name]));
@@ -186,6 +188,12 @@ export async function buildRecap(from: string, to: string, userIds?: number[]): 
       if (!shift) return { ...base, status: 'OFF', note: null };
 
       summary.hariKerja++;
+      // Ditandai Super Admin "tidak bekerja" (absen tapi tidak bertugas) → Alfa, apa pun absennya
+      const mark = marks.get(scheduleKey(user.id, date));
+      if (mark) {
+        summary.alfa++;
+        return { ...base, status: 'ALFA', note: `Ditandai tidak bekerja: ${mark.reason}` };
+      }
       const start = slots.ISTIRAHAT?.time ?? null;
       const end = slots.KEMBALI?.time ?? null;
       const b = takesBreak(user.role) ? activeBreak(shift) : null;

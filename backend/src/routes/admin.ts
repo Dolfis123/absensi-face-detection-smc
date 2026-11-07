@@ -11,12 +11,15 @@ import {
   isAttendee,
   GeofenceSetting,
   Holiday,
+  NotWorkingMark,
   SLOT_TYPES,
   Shift,
   User,
   sequelize,
 } from '../models';
 import { applyCorrection } from '../services/correctionService';
+import { cancelMark, markNotWorking } from '../services/notWorking';
+import { buildRecap } from '../services/recapService';
 import { enrollWithDuplicateCheck, SimilarFace } from '../services/faceEnrollment';
 import { assertPinAvailable, hashPin, PIN_RE } from '../services/identity';
 import { ah, HttpError } from '../utils/http';
@@ -332,6 +335,58 @@ router.get(
         limit: 300,
       }),
     );
+  }),
+);
+
+// ─────────────── Tandai Tidak Bekerja (hari dihitung Alfa) ───────────────
+router.get(
+  '/not-working',
+  ah(async (_req, res) => {
+    res.json(
+      await NotWorkingMark.findAll({
+        include: [
+          { model: User, as: 'user', attributes: ['id', 'fullName', 'nik', 'role'] },
+          { model: User, as: 'createdBy', attributes: ['id', 'fullName'] },
+          { model: User, as: 'cancelledBy', attributes: ['id', 'fullName'] },
+        ],
+        order: [['date', 'DESC'], ['id', 'DESC']],
+        limit: 300,
+      }),
+    );
+  }),
+);
+
+/** Pratinjau satu hari karyawan sebelum ditandai: jadwal, status, dan absen yang tercatat. */
+router.get(
+  '/not-working/day',
+  ah(async (req, res) => {
+    const q = z.object({ userId: z.coerce.number().int().positive(), date: z.string().regex(DATE_RE) }).parse(req.query);
+    const [row] = await buildRecap(q.date, q.date, [q.userId]);
+    if (!row) throw new HttpError(404, 'Karyawan tidak ditemukan');
+    res.json({ user: row.user, day: row.days[0] });
+  }),
+);
+
+router.post(
+  '/not-working',
+  ah(async (req, res) => {
+    const body = z
+      .object({
+        userId: z.number().int().positive(),
+        date: z.string().regex(DATE_RE),
+        reason: z.string().trim().min(10, 'Alasan minimal 10 karakter').max(500),
+      })
+      .parse(req.body);
+    res.status(201).json(await markNotWorking({ ...body, actor: currentUser(req) }));
+  }),
+);
+
+router.patch(
+  '/not-working/:id/cancel',
+  ah(async (req, res) => {
+    const { reason } = z.object({ reason: z.string().trim().min(5, 'Alasan pembatalan minimal 5 karakter').max(300) }).parse(req.body);
+    const r = await cancelMark({ actor: currentUser(req), id: Number(req.params.id), reason });
+    res.json({ ok: true, restored: r.restored });
   }),
 );
 

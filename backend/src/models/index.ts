@@ -864,4 +864,50 @@ EmployeeWage.init(
   { sequelize, tableName: 'employee_wages', createdAt: false },
 );
 
+// ───────────────────────────── Tandai Tidak Bekerja (khusus Super Admin) ─────────────────────────────
+/**
+ * Petugas yang absen tetapi tidak benar-benar bekerja (mis. hanya datang absen lalu pulang).
+ * Selama tanda aktif: hari itu dihitung Alfa (mangkir), absensi hari itu dibatalkan (VOID) lewat
+ * audit trail, dan petugas tidak bisa absen lagi pada tanggal tersebut. Tanda bisa dibatalkan.
+ */
+export class NotWorkingMark extends Model<InferAttributes<NotWorkingMark>, InferCreationAttributes<NotWorkingMark>> {
+  declare id: CreationOptional<number>;
+  declare userId: number;
+  declare date: string;
+  declare reason: string;
+  /** id absensi yang dibatalkan saat penandaan; dipulihkan bila tanda dibatalkan */
+  declare voidedIds: number[];
+  declare createdById: number;
+  declare cancelledAt: CreationOptional<Date | null>;
+  declare cancelledById: CreationOptional<number | null>;
+  declare cancelReason: CreationOptional<string | null>;
+  declare createdAt: CreationOptional<Date>;
+}
+NotWorkingMark.init(
+  {
+    id: { type: DataTypes.INTEGER.UNSIGNED, autoIncrement: true, primaryKey: true },
+    userId: { type: DataTypes.INTEGER.UNSIGNED, allowNull: false, references: { model: 'users', key: 'id' } },
+    date: { type: DataTypes.DATEONLY, allowNull: false },
+    reason: { type: DataTypes.STRING(500), allowNull: false },
+    voidedIds: {
+      type: DataTypes.JSON,
+      allowNull: false,
+      // MariaDB menyimpan JSON sebagai teks; pastikan selalu terbaca sebagai array
+      get() {
+        const v = this.getDataValue('voidedIds') as unknown;
+        return typeof v === 'string' ? (JSON.parse(v) as number[]) : ((v as number[] | null) ?? []);
+      },
+    },
+    createdById: { type: DataTypes.INTEGER.UNSIGNED, allowNull: false, references: { model: 'users', key: 'id' } },
+    cancelledAt: { type: DataTypes.DATE, allowNull: true },
+    cancelledById: { type: DataTypes.INTEGER.UNSIGNED, allowNull: true },
+    cancelReason: { type: DataTypes.STRING(300), allowNull: true },
+    createdAt: DataTypes.DATE,
+  },
+  { sequelize, tableName: 'not_working_marks', updatedAt: false, indexes: [{ fields: ['user_id', 'date'] }, { fields: ['date'] }] },
+);
+NotWorkingMark.belongsTo(User, { foreignKey: 'userId', as: 'user' });
+NotWorkingMark.belongsTo(User, { foreignKey: 'createdById', as: 'createdBy' });
+NotWorkingMark.belongsTo(User, { foreignKey: 'cancelledById', as: 'cancelledBy' });
+
 export { sequelize };

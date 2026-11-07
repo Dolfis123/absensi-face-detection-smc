@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
 import { BreakCell, SlotTime, StatusBadge, useLoad } from '../../components/attendance';
 import { Icon } from '../../components/icons';
-import { Alert, Card, cx, Empty, Loading, PageHeader, PersonCell, SearchInput, Table, Td, Th } from '../../components/ui';
+import { MarkNotWorkingModal } from '../../components/notWorking';
+import { useAuth } from '../../lib/auth';
+import { Alert, Button, Card, cx, Empty, Loading, PageHeader, PersonCell, SearchInput, Table, Td, Th } from '../../components/ui';
 import { api, DayRecord, DayStatus, Role } from '../../lib/api';
 import { fmtDate, STATUS_STYLE } from '../../lib/format';
 
@@ -16,6 +18,8 @@ export default function Monitoring() {
   const { data, error, loading, reload } = useLoad(() => api.get<TodayResponse>('/monitor/today'));
   const [filter, setFilter] = useState<DayStatus | 'ALL' | 'BREAK'>('ALL');
   const [q, setQ] = useState('');
+  const isAdmin = useAuth().user?.role === 'SUPER_ADMIN';
+  const [markUser, setMarkUser] = useState<number | null>(null);
 
   useEffect(() => {
     const id = setInterval(reload, 15_000);
@@ -106,6 +110,12 @@ export default function Monitoring() {
                   <Td>
                     <StatusBadge status={r.status} />
                     {r.status === 'ABSEN_SEKALI' && r.note && <div className="mt-1 text-xs text-violet-700">{r.note}</div>}
+                    {r.status === 'ALFA' && r.note && <div className="mt-1 max-w-[14rem] text-xs text-rose-700">{r.note}</div>}
+                    {isAdmin && ['TEPAT_WAKTU', 'TERLAMBAT', 'ABSEN_SEKALI'].includes(r.status) && (
+                      <Button variant="ghost" className="mt-1 !px-2 !py-0.5 text-xs text-rose-700" onClick={() => setMarkUser(r.user.id)}>
+                        Tandai tidak bekerja
+                      </Button>
+                    )}
                   </Td>
                   <Td>
                     <SlotTime d={r} slot="MASUK" />
@@ -133,6 +143,19 @@ export default function Monitoring() {
           </Table>
         )}
       </Card>
+      {isAdmin && data && (
+        <MarkNotWorkingModal
+          open={markUser !== null}
+          onClose={() => setMarkUser(null)}
+          onDone={() => {
+            setMarkUser(null);
+            reload();
+          }}
+          employees={rows.map((r) => r.user)}
+          initialUserId={markUser ?? undefined}
+          initialDate={data.serverTime.date}
+        />
+      )}
     </>
   );
 }
