@@ -1,6 +1,8 @@
 import { Link } from 'react-router-dom';
+import { postLabel, useOrg } from '../lib/org';
 
 export default function Landing() {
+  const org = useOrg();
   return (
     <div className="flex min-h-screen flex-col bg-gradient-to-b from-brand-900 via-brand-700 to-brand-600 px-5 text-white">
       <div className="mx-auto flex w-full max-w-md flex-1 flex-col justify-center py-10">
@@ -8,7 +10,7 @@ export default function Landing() {
           <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-white/15 text-3xl font-black">P</div>
           <h1 className="text-3xl font-extrabold tracking-tight">SMC-FaceAttend</h1>
           <p className="mt-2 text-sm text-brand-100">Sistem Absensi Wajah &amp; Geofencing</p>
-          <p className="text-sm text-brand-100">Pos Parkir Mal SMC · Kota Sorong</p>
+          <p className="text-sm text-brand-100">{[postLabel(org), org.cityRegion].filter(Boolean).join(' · ')}</p>
         </div>
 
         <div className="space-y-4">

@@ -5,6 +5,7 @@
 import ExcelJS from 'exceljs';
 import type { Response } from 'express';
 import PDFDocument from 'pdfkit';
+import { getOrgSettings, OrgSettings, postText } from './organization';
 import { Op } from 'sequelize';
 import { ATTENDEE_ROLES, EmployeeSchedule, Holiday, Shift, User } from '../models';
 import { eachDate, witNow } from '../utils/time';
@@ -49,6 +50,7 @@ export interface RosterData {
   legend: { kind: Kind; symbol: string; meaning: string }[];
   /** Pos penempatan yang dipakai di periode ini (urut sesuai pengaturan), termasuk Cadangan bila ada */
   posts: Post[];
+  org: OrgSettings;
 }
 
 const kindOf = (s: Shift): Kind => (s.code === 'SHIFT_1' ? 'S1' : s.code === 'SHIFT_2' ? 'S2' : s.code === 'SHIFT_PENUH' ? 'FULL' : 'OTHER');
@@ -56,12 +58,13 @@ const symbolOf = (s: Shift) => (s.code === 'SHIFT_PENUH' ? 'PENUH' : s.name.repl
 
 export async function loadRosterData(from: string, to: string): Promise<RosterData> {
   const dates = eachDate(from, to);
-  const [shifts, users, schedules, holidays, postList] = await Promise.all([
+  const [shifts, users, schedules, holidays, postList, org] = await Promise.all([
     Shift.findAll({ order: [['id', 'ASC']] }),
     User.findAll({ where: { role: [...ATTENDEE_ROLES], isActive: true } }),
     EmployeeSchedule.findAll({ where: { date: { [Op.between]: [from, to] } } }),
     Holiday.findAll({ where: { date: { [Op.between]: [from, to] } } }),
     getPosts(),
+    getOrgSettings(),
   ]);
   const shiftById = new Map(shifts.map((s) => [s.id, s]));
   const holidayMap = new Map(holidays.map((h) => [h.date, h.name]));
@@ -96,7 +99,7 @@ export async function loadRosterData(from: string, to: string): Promise<RosterDa
   if (used.has('—')) legend.push({ kind: 'EMPTY', symbol: '—', meaning: 'Belum dijadwalkan, tanya Koordinator' });
   const usedPosts = new Set(rows.flatMap((r) => r.cells.map((c) => c.post).filter(Boolean)));
   const posts = [...postList.filter((p) => usedPosts.has(p.code)), ...(usedPosts.has(RESERVE.code) ? [RESERVE] : [])];
-  return { from, to, dates, holidays: holidayMap, shifts, rows, legend, posts };
+  return { from, to, dates, holidays: holidayMap, shifts, rows, legend, posts, org };
 }
 
 function counts(cells: RosterCell[]) {
@@ -122,7 +125,7 @@ const periodText = (r: RosterData) => `${fmtLongDate(r.from)} – ${fmtLongDate(
 const NOTES = [
   'Absen Masuk dibuka 30 menit sebelum jam masuk. Absen di pos dengan wajah sendiri.',
   'Jadwal terbaru selalu bisa dilihat di aplikasi, menu Jadwal Shift.',
-  'Tukar shift wajib seizin Koordinator Lapangan agar roster di aplikasi ikut diubah.',
+  'Tukar shift wajib seizin Koordinator agar roster di aplikasi ikut diubah.',
 ];
 
 // ─────────────── PDF ───────────────
@@ -134,7 +137,7 @@ const GRID = '#cbd5e1';
 /** Satu halaman per minggu (Senin–Minggu) agar mudah dibaca di HP, ditutup halaman rekap. */
 export function sendRosterPdf(res: Response, r: RosterData, generatedBy: string, filename: string) {
   const now = witNow();
-  const doc = new PDFDocument({ size: 'A4', layout: 'landscape', margin: MARGIN, info: { Title: `Roster Shift ${periodText(r)}`, Author: 'SMC-FaceAttend' } });
+  const doc = new PDFDocument({ size: 'A4', layout: 'landscape', margin: MARGIN, info: { Title: `Roster Shift ${periodText(r)}`, Author: r.org.companyName } });
   res.setHeader('Content-Type', 'application/pdf');
   res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
   doc.pipe(res);
@@ -145,7 +148,7 @@ export function sendRosterPdf(res: Response, r: RosterData, generatedBy: string,
   const header = (subtitle: string) => {
     doc.rect(0, 0, pageW, 62).fill('#0c2b52');
     doc.font('Helvetica-Bold').fontSize(17).fillColor('#ffffff').text('ROSTER SHIFT KARYAWAN PARKIR', MARGIN, 14);
-    doc.font('Helvetica').fontSize(9).fillColor('#bcdaff').text('Pos Parkir Mall Sorong Modern City (SMC) · Kota Sorong', MARGIN, 36);
+    doc.font('Helvetica').fontSize(9).fillColor('#bcdaff').text([postText(r.org), r.org.cityRegion].filter(Boolean).join(' · '), MARGIN, 36);
     doc.font('Helvetica-Bold').fontSize(11).fillColor('#ffffff').text(subtitle, MARGIN, 16, { width: usable, align: 'right' });
     doc.font('Helvetica').fontSize(8).fillColor('#bcdaff').text(`Periode ${periodText(r)}`, MARGIN, 36, { width: usable, align: 'right' });
     doc.y = 76;
@@ -361,7 +364,7 @@ export async function sendRosterXlsx(res: Response, r: RosterData, generatedBy: 
   const whiteBorder = { top: white, left: white, bottom: white, right: white };
 
   ws.mergeCells(1, 1, 1, lastCol);
-  ws.getCell(1, 1).value = 'ROSTER SHIFT KARYAWAN PARKIR — Pos Parkir Mall Sorong Modern City (SMC)';
+  ws.getCell(1, 1).value = `ROSTER SHIFT KARYAWAN PARKIR — ${postText(r.org)}`;
   ws.getCell(1, 1).font = { bold: true, size: 14, color: { argb: 'FF0C2B52' } };
   ws.mergeCells(2, 1, 2, lastCol);
   ws.getCell(2, 1).value = `Periode ${periodText(r)} · dicetak ${fmtLongDate(witNow().date)} oleh ${generatedBy}`;
@@ -526,14 +529,15 @@ const partOfDay = (t: string) => {
 };
 const longDate = (d: string) => `${DAY_LONG[weekday(d)]}, ${fmtLongDate(d)}`;
 
-/** Teks jadwal satu hari dengan format seperti jadwal manual manajemen Mall SMC. */
+/** Teks jadwal satu hari dengan format seperti jadwal manual manajemen tempat. */
 export async function buildWhatsappText(date: string): Promise<string> {
-  const [shifts, users, schedules, holiday, posts] = await Promise.all([
+  const [shifts, users, schedules, holiday, posts, org] = await Promise.all([
     Shift.findAll({ order: [['id', 'ASC']] }),
     User.findAll({ where: { role: [...ATTENDEE_ROLES], isActive: true } }),
     EmployeeSchedule.findAll({ where: { date } }),
     Holiday.findOne({ where: { date } }),
     getPosts(),
+    getOrgSettings(),
   ]);
   const name = new Map(users.map((u) => [u.id, u.fullName]));
   const coordinators = new Set(users.filter((u) => u.role === 'KOORDINATOR').map((u) => u.id));
@@ -544,7 +548,7 @@ export async function buildWhatsappText(date: string): Promise<string> {
   const rotation = shifts.filter((sh) => working.some((s) => s.shiftId === sh.id && !coordinators.has(s.userId)));
 
   const out: string[] = [];
-  out.push('📅 *JADWAL SHIFT PETUGAS PARKIRAN*', '', 'Mall Sorong Modern City', `📅 Berlaku: *${longDate(date)}*`);
+  out.push('📅 *JADWAL SHIFT PETUGAS PARKIRAN*', '', org.placeName, `📅 Berlaku: *${longDate(date)}*`);
   if (holiday) out.push(`🎉 Hari libur: ${holiday.name}`);
   out.push('', '✅ *INFORMASI UMUM*', '', '- 📌 Sistem Absensi: Absensi Online (wajah + lokasi di pos)');
   for (const sh of rotation) out.push(`- ⏰ ${sh.name}: ${dot(sh.startTime)} – ${dot(sh.endTime)}`);

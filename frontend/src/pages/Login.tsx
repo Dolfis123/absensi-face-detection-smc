@@ -4,8 +4,10 @@ import { homePath } from '../components/Layout';
 import { Alert, Button, Field, Input } from '../components/ui';
 import { errMsg } from '../lib/api';
 import { useAuth } from '../lib/auth';
+import { postLabel, useOrg } from '../lib/org';
 
 export default function Login() {
+  const org = useOrg();
   const { user, login } = useAuth();
   const navigate = useNavigate();
   const [username, setUsername] = useState('');
@@ -34,7 +36,7 @@ export default function Login() {
       <form onSubmit={onSubmit} className="w-full max-w-sm space-y-4 rounded-2xl bg-white p-6 shadow-xl">
         <div className="text-center">
           <h1 className="text-2xl font-extrabold text-brand-900">Login</h1>
-          <p className="text-sm text-slate-500">SMC-FaceAttend · Pos Parkir Mal SMC</p>
+          <p className="text-sm text-slate-500">SMC-FaceAttend · {postLabel(org)}</p>
         </div>
         {error && <Alert>{error}</Alert>}
         <Field label="Username">

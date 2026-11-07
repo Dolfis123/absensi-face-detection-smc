@@ -6,54 +6,13 @@
  *    alasan yang sah, dikualifikasikan mengundurkan diri (keputusan Manajemen, di luar sistem)
  * Hitungan memakai hari kerja terjadwal: hari Off, hari libur, dan hari tanpa jadwal dilewati.
  */
-import { AppSetting, LetterType, sequelize, ShiftChangeLog } from '../models';
+import type { LetterType } from '../models';
+import { formatLetterNumber, getOrgSettings, OrgSettings } from './organization';
 import type { DayStatus } from './recapService';
 
-export interface DisciplineSettings {
-  companyName: string;
-  companyAddress: string;
-  hrdName: string;
-  hrdTitle: string;
-  coordinatorName: string;
-  managementName: string;
-  managementTitle: string;
-  /** Bagian tengah nomor surat, mis. 001/SP/DPM-SMC/XI/2026 */
-  numberCode: string;
-  /** Tempat menghadap untuk surat panggilan */
-  defaultReportPlace: string;
-}
-
-export const DEFAULT_DISCIPLINE: DisciplineSettings = {
-  companyName: 'CV. DEVA JAYA',
-  companyAddress: 'Jln. Bolhok Rt.1/Rw.01 Kelurahan Klabinain, Kab. Sorong',
-  hrdName: '',
-  hrdTitle: 'HRD/Admin Manager',
-  coordinatorName: '',
-  managementName: '',
-  managementTitle: 'Manajemen Mall Sorong Modern City',
-  numberCode: 'DPM-SMC',
-  defaultReportPlace: 'Kantor Pengelola Parkir Mall Sorong Modern City',
-};
-
-const KEY = 'disciplineSettings';
-
-export async function getDisciplineSettings(): Promise<DisciplineSettings> {
-  const row = await AppSetting.findByPk(KEY);
-  if (!row) return DEFAULT_DISCIPLINE;
-  try {
-    return { ...DEFAULT_DISCIPLINE, ...(JSON.parse(row.value) as Partial<DisciplineSettings>) };
-  } catch {
-    return DEFAULT_DISCIPLINE;
-  }
-}
-
-export async function saveDisciplineSettings(next: DisciplineSettings, actorId: number) {
-  const before = await getDisciplineSettings();
-  await sequelize.transaction(async (transaction) => {
-    await AppSetting.upsert({ key: KEY, value: JSON.stringify(next) }, { transaction });
-    await ShiftChangeLog.create({ actorId, target: 'Pengaturan surat disiplin', before, after: next }, { transaction });
-  });
-}
+/** Kop surat, penomoran, dan penandatangan kini diatur di Identitas & Kop Surat (organization.ts). */
+export type DisciplineSettings = OrgSettings;
+export const getDisciplineSettings = getOrgSettings;
 
 // Status yang bukan hari kerja: tidak menambah dan tidak memutus hitungan berturut-turut
 const NOT_WORKDAY = new Set<DayStatus>(['OFF', 'DAY_OFF', 'LIBUR', 'BELUM']);
@@ -115,7 +74,5 @@ export const LETTER_TITLE: Record<LetterType, string> = {
   PANGGILAN_2: 'Surat Panggilan Kedua',
 };
 
-const ROMAN = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII'];
-/** Mis. 001/SP/DPM-SMC/XI/2026 (SP = peringatan, SPG = panggilan) */
-export const letterNumber = (seq: number, type: LetterType, code: string, letterDate: string) =>
-  `${String(seq).padStart(3, '0')}/${type.startsWith('PANGGILAN') ? 'SPG' : 'SP'}/${code}/${ROMAN[Number(letterDate.slice(5, 7)) - 1]}/${letterDate.slice(0, 4)}`;
+/** Nomor surat menurut pola di Identitas & Kop Surat, mis. 001/SP/DPM-SMC/XI/2026 */
+export const letterNumber = (seq: number, type: LetterType, s: OrgSettings, letterDate: string) => formatLetterNumber(s, seq, type.startsWith('PANGGILAN'), letterDate);

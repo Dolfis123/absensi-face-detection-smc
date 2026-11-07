@@ -1,5 +1,6 @@
 import path from 'path';
 import { Router } from 'express';
+import { getOrgSettings } from '../services/organization';
 import { Op } from 'sequelize';
 import { z } from 'zod';
 import { currentUser, requireRole } from '../middleware/auth';
@@ -157,7 +158,7 @@ router.get(
     const recap = await buildRecap(from, to);
     sendCsv(
       res,
-      `rekap-bulanan-SMC_${month}.csv`,
+      `rekap-bulanan_${month}.csv`,
       ['NIK', 'Nama', 'Hari Kerja', 'Hadir', 'Tepat Waktu', 'Terlambat', 'Absen Sekali', 'Izin', 'Sakit', 'Cuti', 'Alfa', 'Libur', 'Hari Off', 'Istirahat Lebih', 'Lupa Absen Kembali', 'Kehadiran (%)'],
       recap.map(({ user, summary: s }) => [
         user.nik,
@@ -193,6 +194,7 @@ router.get(
       filename: `laporan-kehadiran_${from}_${to}.pdf`,
       generatedBy: currentUser(req).fullName,
       signature: false,
+      org: await getOrgSettings(),
     });
   }),
 );
@@ -206,9 +208,10 @@ router.get(
     sendAttendancePdf(res, await buildRecap(from, to), {
       title: 'Rekap Kehadiran Bulanan',
       period: fmtMonth(month),
-      filename: `rekap-bulanan-SMC_${month}.pdf`,
+      filename: `rekap-bulanan_${month}.pdf`,
       generatedBy: currentUser(req).fullName,
       signature: true,
+      org: await getOrgSettings(),
     });
   }),
 );

@@ -6,6 +6,7 @@ import type { Response } from 'express';
 import PDFDocument from 'pdfkit';
 import type { DisciplineSettings } from './discipline';
 import { PayRow, PayrollSettings, rupiah } from './payroll';
+import { areaText, drawLogo, signDate } from './organization';
 import { fmtLongDate } from './pdfReport';
 
 const INK = '#111827';
@@ -15,7 +16,7 @@ const BRAND = '#0c2b52';
 const LINK = '#1d4ed8';
 const GOOD = '#047857';
 const BAD = '#b91c1c';
-const POSITION: Record<string, string> = { KARYAWAN: 'Petugas Parkir', KOORDINATOR: 'Koordinator Lapangan' };
+const position = (role: string, kop: DisciplineSettings) => (role === 'KOORDINATOR' ? kop.coordinatorTitle : role === 'KARYAWAN' ? 'Petugas Parkir' : '');
 const DAY = ['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab'];
 const shortDate = (iso: string) => `${DAY[new Date(`${iso}T00:00:00Z`).getUTCDay()]} ${Number(iso.slice(8, 10))}/${Number(iso.slice(5, 7))}`;
 
@@ -33,9 +34,13 @@ export interface PayrollMeta {
 const destination = (doc: PDFKit.PDFDocument, name: string) => (doc as unknown as { addNamedDestination(n: string): void }).addNamedDestination(name);
 
 function kop(doc: PDFKit.PDFDocument, m: PayrollMeta, x: number, w: number, y: number) {
-  doc.font('Times-Bold').fontSize(17).fillColor(INK).text(m.kop.companyName.toUpperCase(), x, y, { width: w, align: 'center', characterSpacing: 0.6 });
-  doc.font('Times-Roman').fontSize(9).fillColor(MUTED).text(`${m.kop.companyAddress} · Penugasan: Area Parkir Mall Sorong Modern City`, x, doc.y, { width: w, align: 'center' });
-  const ly = doc.y + 5;
+  const logoW = drawLogo(doc, x, y - 4, 40);
+  const tx = logoW ? x + logoW + 8 : x;
+  const tw = logoW ? w - (logoW + 8) * 2 : w;
+  doc.font('Times-Bold').fontSize(17).fillColor(INK).text(m.kop.companyName.toUpperCase(), tx, y, { width: tw, align: 'center', characterSpacing: 0.6 });
+  const sub = [m.kop.companyAddress, m.kop.companyContact, `Penugasan: ${areaText(m.kop)}`].filter(Boolean).join(' · ');
+  doc.font('Times-Roman').fontSize(9).fillColor(MUTED).text(sub, tx, doc.y, { width: tw, align: 'center' });
+  const ly = Math.max(doc.y, logoW ? y - 4 + logoW : 0) + 5;
   doc.moveTo(x, ly).lineTo(x + w, ly).lineWidth(1.6).strokeColor(INK).stroke();
   doc.moveTo(x, ly + 2.5).lineTo(x + w, ly + 2.5).lineWidth(0.5).strokeColor(INK).stroke();
   doc.y = ly + 12;
@@ -177,7 +182,7 @@ function rekapPage(doc: PDFKit.PDFDocument, rows: PayRow[], m: PayrollMeta) {
   // Tanda tangan
   const sx = x + w * 0.7;
   const sy = Math.max(y - notes.length * 12 - 8, doc.page.height - 132);
-  doc.font('Times-Roman').fontSize(10).fillColor(INK).text(`Sorong, ${fmtLongDate(m.printedAt)}`, sx, sy, { width: w * 0.3, align: 'center' });
+  doc.font('Times-Roman').fontSize(10).fillColor(INK).text(signDate(m.kop, fmtLongDate(m.printedAt)), sx, sy, { width: w * 0.3, align: 'center' });
   doc.text(`${m.kop.companyName}`, sx, doc.y + 1, { width: w * 0.3, align: 'center' });
   doc.font('Times-Bold').text(m.kop.hrdName || '(.................................)', sx, sy + 64, { width: w * 0.3, align: 'center', underline: !!m.kop.hrdName });
   doc.font('Times-Roman').fontSize(9).text(m.kop.hrdTitle, sx, doc.y + 1, { width: w * 0.3, align: 'center' });
@@ -203,7 +208,7 @@ function slipPage(doc: PDFKit.PDFDocument, r: PayRow, m: PayrollMeta, linked: bo
   const ident: [string, string][] = [
     ['Nama', r.user.fullName],
     ['NIK', r.user.nik],
-    ['Jabatan', POSITION[r.user.role] ?? '-'],
+    ['Jabatan', position(r.user.role, m.kop) || '-'],
     ['Upah pokok', `${rupiah(r.baseWage)} per bulan`],
     ['Upah per hari', `${rupiah(r.dailyWage)} (Upah Pokok ÷ ${m.settings.divisor})`],
   ];
@@ -292,12 +297,12 @@ function slipPage(doc: PDFKit.PDFDocument, r: PayRow, m: PayrollMeta, linked: bo
   // Tanda tangan
   const sy = Math.max(y + 18, doc.page.height - 190);
   const half = w / 2;
-  doc.font('Times-Roman').fontSize(10.5).fillColor(INK).text(`Sorong, ${fmtLongDate(m.printedAt)}`, x + half, sy, { width: half, align: 'center' });
+  doc.font('Times-Roman').fontSize(10.5).fillColor(INK).text(signDate(m.kop, fmtLongDate(m.printedAt)), x + half, sy, { width: half, align: 'center' });
   doc.text('Diterima oleh,', x, sy + 16, { width: half, align: 'center' });
   doc.text(`${m.kop.companyName}`, x + half, sy + 16, { width: half, align: 'center' });
   doc.font('Times-Bold').text(r.user.fullName, x, sy + 84, { width: half, align: 'center', underline: true });
   doc.text(m.kop.hrdName || '(.................................)', x + half, sy + 84, { width: half, align: 'center', underline: !!m.kop.hrdName });
-  doc.font('Times-Roman').fontSize(9.5).text(POSITION[r.user.role] ?? '', x, sy + 99, { width: half, align: 'center' });
+  doc.font('Times-Roman').fontSize(9.5).text(position(r.user.role, m.kop), x, sy + 99, { width: half, align: 'center' });
   doc.text(m.kop.hrdTitle, x + half, sy + 99, { width: half, align: 'center' });
   footer(doc, m);
 }
@@ -330,15 +335,17 @@ export function sendCertificatePdf(res: Response, r: PayRow, m: PayrollMeta, fil
   for (const [cx, cy] of [[28, 28], [W - 28, 28], [28, H - 28], [W - 28, H - 28]]) {
     doc.circle(cx, cy, 7).fill(GOLD);
   }
-  doc.font('Times-Bold').fontSize(16).fillColor(BRAND).text(m.kop.companyName.toUpperCase(), 0, 62, { width: W, align: 'center', characterSpacing: 2 });
-  doc.font('Times-Roman').fontSize(10).fillColor(MUTED).text('Area Parkir Mall Sorong Modern City · Kota Sorong', 0, 84, { width: W, align: 'center' });
-  doc.font('Times-Bold').fontSize(40).fillColor(GOLD).text('PIAGAM PENGHARGAAN', 0, 128, { width: W, align: 'center', characterSpacing: 3 });
+  // Logo (bila ada) di atas nama perusahaan, di dalam bingkai
+  const lo = drawLogo(doc, W / 2 - 19, 40, 38) ? 22 : 0;
+  doc.font('Times-Bold').fontSize(16).fillColor(BRAND).text(m.kop.companyName.toUpperCase(), 0, 62 + lo, { width: W, align: 'center', characterSpacing: 2 });
+  doc.font('Times-Roman').fontSize(10).fillColor(MUTED).text([areaText(m.kop), m.kop.cityRegion].filter(Boolean).join(' · '), 0, 84 + lo, { width: W, align: 'center' });
+  doc.font('Times-Bold').fontSize(40).fillColor(GOLD).text('PIAGAM PENGHARGAAN', 0, 128 + lo / 2, { width: W, align: 'center', characterSpacing: 3 });
   doc.moveTo(W / 2 - 140, 182).lineTo(W / 2 + 140, 182).lineWidth(1).strokeColor(GOLD).stroke();
   doc.font('Times-Italic').fontSize(14).fillColor(INK).text('dengan bangga diberikan kepada', 0, 200, { width: W, align: 'center' });
   doc.font('Times-Bold').fontSize(34).fillColor(BRAND).text(r.user.fullName, 0, 230, { width: W, align: 'center' });
-  doc.font('Times-Roman').fontSize(12).fillColor(MUTED).text(`${POSITION[r.user.role] ?? ''} · NIK ${r.user.nik}`, 0, 274, { width: W, align: 'center' });
+  doc.font('Times-Roman').fontSize(12).fillColor(MUTED).text(`${position(r.user.role, m.kop)} · NIK ${r.user.nik}`, 0, 274, { width: W, align: 'center' });
   doc.font('Times-Roman').fontSize(14).fillColor(INK).text(
-    `sebagai PETUGAS TERBAIK PERINGKAT ${r.rank} bulan ${m.monthLabel}, atas kedisiplinan dan tanggung jawab dalam kehadiran bertugas di Area Parkir Mall Sorong Modern City.`,
+    `sebagai PETUGAS TERBAIK PERINGKAT ${r.rank} bulan ${m.monthLabel}, atas kedisiplinan dan tanggung jawab dalam kehadiran bertugas di ${areaText(m.kop)}.`,
     W * 0.15,
     306,
     { width: W * 0.7, align: 'center', lineGap: 4 },
@@ -352,12 +359,13 @@ export function sendCertificatePdf(res: Response, r: PayRow, m: PayrollMeta, fil
     { width: W, align: 'center' },
   );
   const y = 410;
-  const colW = W / 3;
-  [
-    ['Mengetahui,', 'Koordinator Lapangan', m.kop.coordinatorName],
-    ['Mengetahui,', m.kop.managementTitle, m.kop.managementName],
-    [`Sorong, ${fmtLongDate(m.printedAt)}`, `${m.kop.companyName} · ${m.kop.hrdTitle}`, m.kop.hrdName],
-  ].forEach(([a, b, name], i) => {
+  const signs = [
+    ['Mengetahui,', m.kop.coordinatorTitle, m.kop.coordinatorName],
+    ...(m.kop.showManagementSign ? [['Mengetahui,', m.kop.managementTitle, m.kop.managementName]] : []),
+    [signDate(m.kop, fmtLongDate(m.printedAt)), `${m.kop.companyName} · ${m.kop.hrdTitle}`, m.kop.hrdName],
+  ];
+  const colW = W / signs.length;
+  signs.forEach(([a, b, name], i) => {
     const cx = colW * i + 30;
     doc.font('Times-Roman').fontSize(11).fillColor(INK).text(a, cx, y, { width: colW - 60, align: 'center' });
     doc.font('Times-Bold').fontSize(10).text(b, cx, y + 15, { width: colW - 60, align: 'center' });

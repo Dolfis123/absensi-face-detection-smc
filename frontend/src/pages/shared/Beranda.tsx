@@ -1,3 +1,4 @@
+import { postLabel, useOrg } from '../../lib/org';
 import { Link } from 'react-router-dom';
 import { StatusBadge, useLoad } from '../../components/attendance';
 import { Icon, IconName } from '../../components/icons';
@@ -33,10 +34,11 @@ export default function BerandaPengawas() {
     return { today, recap, leaves, issues, users };
   }, [isAdmin]);
 
+  const org = useOrg();
   const header = (
     <PageHeader
       title={`${greeting(clock.minutes)}, ${user?.fullName.split(' ')[0] ?? ''}`}
-      subtitle={`${fmtDate(clock.date)} · Ringkasan kehadiran Pos Parkir Mal SMC`}
+      subtitle={`${fmtDate(clock.date)} · Ringkasan kehadiran ${postLabel(org)}`}
       actions={
         <Link
           to="/app/monitoring"

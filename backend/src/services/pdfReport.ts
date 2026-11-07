@@ -1,5 +1,6 @@
 import type { Response } from 'express';
 import PDFDocument from 'pdfkit';
+import { OrgSettings, postText, signDate } from './organization';
 import { witNow } from '../utils/time';
 import type { DayRecord, DayStatus, EmployeeRecap, Summary } from './recapService';
 
@@ -139,13 +140,14 @@ export interface PdfMeta {
   filename: string;
   generatedBy: string;
   signature: boolean;
+  org: OrgSettings;
 }
 
 /** Laporan kehadiran PDF: ringkasan semua karyawan + rincian harian per karyawan. */
 export function sendAttendancePdf(res: Response, recap: EmployeeRecap[], meta: PdfMeta) {
   const now = witNow();
   const printedAt = `${fmtLongDate(now.date)} ${now.time.slice(0, 5)} WIT`;
-  const doc = new PDFDocument({ size: 'A4', layout: 'landscape', margin: MARGIN, bufferPages: true, info: { Title: `${meta.title} — ${meta.period}`, Author: 'SMC-FaceAttend' } });
+  const doc = new PDFDocument({ size: 'A4', layout: 'landscape', margin: MARGIN, bufferPages: true, info: { Title: `${meta.title} — ${meta.period}`, Author: meta.org.companyName } });
 
   res.setHeader('Content-Type', 'application/pdf');
   res.setHeader('Content-Disposition', `attachment; filename="${meta.filename}"`);
@@ -156,7 +158,8 @@ export function sendAttendancePdf(res: Response, recap: EmployeeRecap[], meta: P
   // ── Kop laporan ──
   doc.rect(0, 0, pageW, 78).fill(C.brandDark);
   doc.font('Helvetica-Bold').fontSize(18).fillColor('#ffffff').text(meta.title, MARGIN, 20);
-  doc.font('Helvetica').fontSize(9.5).fillColor('#bcdaff').text('Pos Parkir Mall Sorong Modern City (SMC) · Kota Sorong, Papua Barat Daya', MARGIN, 44);
+  doc.font('Helvetica').fontSize(9.5).fillColor('#bcdaff').text([postText(meta.org), meta.org.cityRegion].filter(Boolean).join(' · '), MARGIN, 44);
+  doc.font('Helvetica').fontSize(8).fillColor('#bcdaff').text(`Pengelola: ${meta.org.companyName}`, MARGIN, 57);
   doc.font('Helvetica-Bold').fontSize(11).fillColor('#ffffff').text(meta.period, MARGIN, 24, { width: pageW - MARGIN * 2, align: 'right' });
   doc.font('Helvetica').fontSize(8).fillColor('#bcdaff').text(`Dicetak ${printedAt} oleh ${meta.generatedBy}`, MARGIN, 44, { width: pageW - MARGIN * 2, align: 'right' });
   doc.y = 96;
@@ -238,9 +241,10 @@ export function sendAttendancePdf(res: Response, recap: EmployeeRecap[], meta: P
     const right = pageW - MARGIN - 40 - colW;
     doc.font('Helvetica').fontSize(9).fillColor(C.ink);
     doc.text('Mengetahui,', left, y, { width: colW, align: 'center' });
-    doc.text('Manager Mal SMC', left, y + 13, { width: colW, align: 'center' });
-    doc.text('(................................................)', left, y + 75, { width: colW, align: 'center' });
-    doc.text(`Sorong, ${fmtLongDate(now.date)}`, right, y, { width: colW, align: 'center' });
+    doc.text(meta.org.reportApproverTitle, left, y + 13, { width: colW, align: 'center' });
+    if (meta.org.reportApproverName) doc.font('Helvetica-Bold').text(meta.org.reportApproverName, left, y + 75, { width: colW, align: 'center', underline: true });
+    else doc.text('(................................................)', left, y + 75, { width: colW, align: 'center' });
+    doc.font('Helvetica').text(signDate(meta.org, fmtLongDate(now.date)), right, y, { width: colW, align: 'center' });
     doc.text('Dibuat oleh, Super Admin', right, y + 13, { width: colW, align: 'center' });
     doc.font('Helvetica-Bold').text(meta.generatedBy, right, y + 75, { width: colW, align: 'center', underline: true });
     doc.y = y + 100;

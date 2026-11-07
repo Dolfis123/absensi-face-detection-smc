@@ -5,6 +5,7 @@ import { useAuth } from '../lib/auth';
 import { useServerClock } from '../lib/clock';
 import { useParkingSettings } from '../lib/parking';
 import { ROLE_LABEL } from '../lib/format';
+import { postLabel, useOrg } from '../lib/org';
 import { Icon, IconName } from './icons';
 import { Avatar, cx } from './ui';
 
@@ -104,6 +105,7 @@ export const NAV_GROUPS: Record<Role, NavGroup[]> = {
         { to: '/app/geofence', label: 'Geofence Pos', icon: 'mapPin' },
         { to: '/app/laporan', label: 'Laporan', icon: 'download' },
         { to: '/app/upah', label: 'Rekap Upah', icon: 'fileText' },
+        { to: '/app/identitas', label: 'Identitas & Kop Surat', icon: 'shield' },
       ],
     },
   ],
@@ -248,6 +250,7 @@ export function Layout() {
   const current = items.find((i) => pathname.startsWith(i.to));
   const isEmployee = user.role === 'KARYAWAN';
   const narrow = collapsed && !mobileOpen;
+  const org = useOrg();
 
   const sidebar = (
     <div className="flex h-full flex-col">
@@ -258,7 +261,7 @@ export function Layout() {
         {!narrow && (
           <div className="min-w-0">
             <div className="truncate text-[15px] font-bold leading-tight text-white">SMC-FaceAttend</div>
-            <div className="truncate text-xs text-brand-200/70">Pos Parkir Mal SMC</div>
+            <div className="truncate text-xs text-brand-200/70">{postLabel(org)}</div>
           </div>
         )}
       </div>

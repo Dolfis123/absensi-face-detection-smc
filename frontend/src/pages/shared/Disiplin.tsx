@@ -1,4 +1,5 @@
-import { FormEvent, useEffect, useState } from 'react';
+import { FormEvent, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useLoad } from '../../components/attendance';
 import { useFeedback } from '../../components/feedback';
 import { Alert, Badge, Button, Card, Empty, Field, Input, Loading, Modal, PageHeader, PersonCell, Select, Table, Td, Textarea, Th } from '../../components/ui';
@@ -45,17 +46,6 @@ interface Letter {
   createdBy: string;
   voidedAt: string | null;
   voidReason: string | null;
-}
-interface Settings {
-  companyName: string;
-  companyAddress: string;
-  hrdName: string;
-  hrdTitle: string;
-  coordinatorName: string;
-  managementName: string;
-  managementTitle: string;
-  numberCode: string;
-  defaultReportPlace: string;
 }
 
 const short = (d: string) => fmtDate(d, false).replace(/ \d{4}$/, '');
@@ -348,61 +338,16 @@ function SuratTerbit({ isAdmin }: { isAdmin: boolean }) {
   );
 }
 
+/** Kop surat, nomor surat, dan penandatangan kini diatur di satu tempat untuk semua dokumen. */
 function Pengaturan() {
-  const { toast } = useFeedback();
-  const { data } = useLoad(() => api.get<Settings>('/discipline/settings'));
-  const [form, setForm] = useState<Settings | null>(null);
-  const [saving, setSaving] = useState(false);
-  useEffect(() => {
-    if (data) setForm(data);
-  }, [data]);
-  if (!form) return <Loading />;
-  const f = (k: keyof Settings, label: string, hint?: string) => (
-    <Field label={label} hint={hint}>
-      <Input value={form[k]} onChange={(e) => setForm({ ...form, [k]: e.target.value })} />
-    </Field>
-  );
-
-  async function save() {
-    setSaving(true);
-    try {
-      await api.put('/discipline/settings', form);
-      toast('Pengaturan surat disimpan');
-    } catch (e) {
-      toast(errMsg(e), 'error');
-    } finally {
-      setSaving(false);
-    }
-  }
-
   return (
-    <div className="grid gap-4 lg:grid-cols-2">
-      <Card title="Kop Surat & Penomoran" subtitle="Pemberi kerja sesuai PKWT">
-        <div className="space-y-3">
-          {f('companyName', 'Nama perusahaan')}
-          {f('companyAddress', 'Alamat perusahaan')}
-          {f('numberCode', 'Kode nomor surat', 'Contoh hasil: 001/SP/DPM-SMC/XI/2026')}
-          {f('defaultReportPlace', 'Tempat menghadap (surat panggilan)')}
-        </div>
-      </Card>
-      <Card title="Penandatangan" subtitle="Kosongkan nama bila ingin ditulis tangan saat penandatanganan">
-        <div className="space-y-3">
-          <div className="grid grid-cols-2 gap-2">
-            {f('hrdName', 'Nama HRD')}
-            {f('hrdTitle', 'Jabatan HRD')}
-          </div>
-          {f('coordinatorName', 'Nama Koordinator Lapangan (mengetahui)')}
-          <div className="grid grid-cols-2 gap-2">
-            {f('managementName', 'Nama Manajemen Mall (mengetahui)')}
-            {f('managementTitle', 'Jabatan / instansi')}
-          </div>
-        </div>
-      </Card>
-      <div className="flex justify-end lg:col-span-2">
-        <Button onClick={save} loading={saving}>
-          Simpan Pengaturan
-        </Button>
-      </div>
-    </div>
+    <Card title="Kop surat, nomor surat & penandatangan">
+      <p className="text-sm text-slate-600">
+        Pengaturan ini sekarang berlaku untuk semua dokumen (surat disiplin, rekap upah, piagam, laporan, roster) dan diubah di satu tempat.
+      </p>
+      <Link to="/app/identitas" className="mt-3 inline-flex rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700">
+        Buka Identitas & Kop Surat
+      </Link>
+    </Card>
   );
 }

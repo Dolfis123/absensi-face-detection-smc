@@ -61,7 +61,7 @@ export default function Laporan() {
         </Card>
         {user?.role === 'SUPER_ADMIN' && (
           <Card>
-            <h2 className="mb-3 font-semibold">Laporan Bulanan Resmi · Manager Mal SMC</h2>
+            <h2 className="mb-3 font-semibold">Laporan Bulanan Resmi</h2>
             <Field label="Bulan">
               <Input type="month" value={month} onChange={(e) => e.target.value && setMonth(e.target.value)} />
             </Field>
@@ -69,7 +69,7 @@ export default function Laporan() {
               <Button
                 icon="fileText"
                 loading={busy === 'month-pdf'}
-                onClick={() => download(`/reports/monthly.pdf?month=${month}`, `rekap-bulanan-SMC_${month}.pdf`, 'month-pdf')}
+                onClick={() => download(`/reports/monthly.pdf?month=${month}`, `rekap-bulanan_${month}.pdf`, 'month-pdf')}
               >
                 Unduh PDF Resmi
               </Button>
@@ -77,12 +77,12 @@ export default function Laporan() {
                 variant="secondary"
                 icon="download"
                 loading={busy === 'month-csv'}
-                onClick={() => download(`/reports/monthly.csv?month=${month}`, `rekap-bulanan-SMC_${month}.csv`, 'month-csv')}
+                onClick={() => download(`/reports/monthly.csv?month=${month}`, `rekap-bulanan_${month}.csv`, 'month-csv')}
               >
                 Unduh Excel (CSV)
               </Button>
             </div>
-            <p className="mt-2 text-xs text-slate-500">PDF resmi dilengkapi kolom tanda tangan Manager Mal SMC.</p>
+            <p className="mt-2 text-xs text-slate-500">PDF resmi dilengkapi kolom tanda tangan pengesah laporan (diatur di Identitas & Kop Surat).</p>
           </Card>
         )}
       </div>

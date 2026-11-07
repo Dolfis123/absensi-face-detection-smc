@@ -5,6 +5,7 @@ import type { Response } from 'express';
 import PDFDocument from 'pdfkit';
 import type { LetterType } from '../models';
 import { DisciplineSettings, LETTER_TITLE } from './discipline';
+import { areaText, drawLogo, signDate } from './organization';
 import { fmtLongDate } from './pdfReport';
 
 const DAY = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
@@ -43,10 +44,16 @@ export function sendDisciplinePdf(res: Response, L: LetterData, s: DisciplineSet
   };
 
   // ── Kop surat ──
-  doc.font('Times-Bold').fontSize(20).fillColor(INK).text(s.companyName.toUpperCase(), M, 40, { width: W, align: 'center', characterSpacing: 1 });
-  doc.font('Times-Roman').fontSize(10).fillColor(MUTED).text(s.companyAddress, { width: W, align: 'center' });
-  doc.text('Penugasan: Area Parkir Mall Sorong Modern City, Kota Sorong, Papua Barat Daya', { width: W, align: 'center' });
-  let y = doc.y + 8;
+  // Logo (bila diunggah) di kiri; teks kop tetap di tengah halaman
+  const logoW = drawLogo(doc, M, 36, 56);
+  const tx = logoW ? M + logoW + 8 : M;
+  const tw = logoW ? W - (logoW + 8) * 2 : W;
+  doc.font('Times-Bold').fontSize(20).fillColor(INK).text(s.companyName.toUpperCase(), tx, 40, { width: tw, align: 'center', characterSpacing: 1 });
+  doc.font('Times-Roman').fontSize(10).fillColor(MUTED);
+  if (s.companyAddress) doc.text(s.companyAddress, tx, doc.y, { width: tw, align: 'center' });
+  if (s.companyContact) doc.text(s.companyContact, tx, doc.y, { width: tw, align: 'center' });
+  doc.text(`Penugasan: ${areaText(s)}${s.cityRegion ? `, ${s.cityRegion}` : ''}`, tx, doc.y, { width: tw, align: 'center' });
+  let y = Math.max(doc.y, logoW ? 36 + logoW : 0) + 8;
   doc.moveTo(M, y).lineTo(M + W, y).lineWidth(2).strokeColor(INK).stroke();
   doc.moveTo(M, y + 3).lineTo(M + W, y + 3).lineWidth(0.6).strokeColor(INK).stroke();
 
@@ -115,7 +122,7 @@ export function sendDisciplinePdf(res: Response, L: LetterData, s: DisciplineSet
       ['Hari, tanggal', L.reportDate ? dayDate(L.reportDate) : '................................'],
       ['Pukul', L.reportTime ? `${L.reportTime.replace(':', '.')} WIT` : '................ WIT'],
       ['Tempat', L.reportPlace ?? s.defaultReportPlace],
-      ['Menemui', [s.hrdTitle, 'Koordinator Lapangan'].join(' / ')],
+      ['Menemui', [s.hrdTitle, s.coordinatorTitle].join(' / ')],
     ]);
     para('Saudara diminta membawa bukti pendukung atas ketidakhadiran tersebut, misalnya surat keterangan dokter atau dokumen lain yang sah.');
     para(
@@ -137,11 +144,11 @@ export function sendDisciplinePdf(res: Response, L: LetterData, s: DisciplineSet
   // ── Kaki halaman ──
   const bottom = doc.page.margins.bottom;
   doc.page.margins.bottom = 0;
-  doc.font('Times-Italic').fontSize(8.5).fillColor(MUTED).text(
-    `Tembusan: Arsip Kepegawaian ${s.companyName} · Koordinator Lapangan · ${s.managementTitle}. Dokumen disusun dari catatan absensi online SMC-FaceAttend.`,
+  doc.font('Times-Italic').fontSize(8).fillColor(MUTED).text(
+    `Tembusan: Arsip Kepegawaian ${s.companyName} · ${s.coordinatorTitle}${s.showManagementSign && s.managementTitle ? ` · ${s.managementTitle}` : ''}. Dokumen disusun dari catatan absensi online SMC-FaceAttend.`,
     M,
-    doc.page.height - 34,
-    { width: W, align: 'center', lineBreak: false },
+    doc.page.height - 36,
+    { width: W, align: 'center', height: 24, ellipsis: true },
   );
   doc.page.margins.bottom = bottom;
   doc.end();
@@ -199,21 +206,22 @@ function callBox(doc: PDFKit.PDFDocument, M: number, W: number, rows: [string, s
 function signatures(doc: PDFKit.PDFDocument, M: number, W: number, L: LetterData, s: DisciplineSettings) {
   if (doc.y > doc.page.height - 40 - 112) doc.addPage();
   const y0 = doc.y + 4;
-  const colW = W / 3;
-  doc.font('Times-Roman').fontSize(11).fillColor(INK).text(`Sorong, ${fmtLongDate(L.letterDate)}`, M + colW * 2, y0, { width: colW, align: 'center' });
-  const yHead = y0 + 16;
-  const blocks: [string, string, string][] = [
-    ['Mengetahui,', 'Koordinator Lapangan', s.coordinatorName],
-    ['Mengetahui,', s.managementTitle, s.managementName],
-    ['Hormat kami,', `${s.companyName}`, s.hrdName],
+  // Tanpa tanda tangan manajemen tempat: dua kolom (Koordinator & Perusahaan)
+  const blocks: [string, string, string, string?][] = [
+    ['Mengetahui,', s.coordinatorTitle, s.coordinatorName],
+    ...(s.showManagementSign ? ([['Mengetahui,', s.managementTitle, s.managementName]] as [string, string, string][]) : []),
+    ['Hormat kami,', `${s.companyName}`, s.hrdName, s.hrdTitle],
   ];
-  blocks.forEach(([head, role, name], i) => {
+  const colW = W / blocks.length;
+  doc.font('Times-Roman').fontSize(11).fillColor(INK).text(signDate(s, fmtLongDate(L.letterDate)), M + colW * (blocks.length - 1), y0, { width: colW, align: 'center' });
+  const yHead = y0 + 16;
+  blocks.forEach(([head, role, name, title], i) => {
     const x = M + colW * i;
     doc.font('Times-Roman').fontSize(11).fillColor(INK).text(head, x, yHead, { width: colW, align: 'center' });
     doc.font('Times-Bold').fontSize(10.5).text(role, x + 6, yHead + 15, { width: colW - 12, align: 'center' });
     const yName = yHead + 60;
     doc.font('Times-Bold').fontSize(11).text(name ? name : '(.................................)', x + 6, yName, { width: colW - 12, align: 'center', underline: !!name });
-    if (i === 2) doc.font('Times-Roman').fontSize(10).text(s.hrdTitle, x + 6, doc.y + 1, { width: colW - 12, align: 'center' });
+    if (title) doc.font('Times-Roman').fontSize(10).text(title, x + 6, doc.y + 1, { width: colW - 12, align: 'center' });
   });
   doc.y = yHead + 88;
 }

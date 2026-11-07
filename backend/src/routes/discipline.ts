@@ -10,7 +10,6 @@ import {
   LETTER_TITLE,
   letterNumber,
   recommend,
-  saveDisciplineSettings,
 } from '../services/discipline';
 import { sendDisciplinePdf } from '../services/disciplinePdf';
 import { buildRecap } from '../services/recapService';
@@ -126,7 +125,7 @@ router.post(
           type: body.type,
           year,
           seq,
-          number: letterNumber(seq, body.type, settings.numberCode, letterDate),
+          number: letterNumber(seq, body.type, settings, letterDate),
           letterDate,
           alfaDates,
           reportDate: isCall ? body.reportDate! : null,
@@ -197,29 +196,6 @@ router.get(
   '/settings',
   ah(async (_req, res) => {
     res.json(await getDisciplineSettings());
-  }),
-);
-
-router.put(
-  '/settings',
-  requireRole('SUPER_ADMIN'),
-  ah(async (req, res) => {
-    const text = (max: number) => z.string().trim().max(max);
-    const body: DisciplineSettings = z
-      .object({
-        companyName: text(120).min(2),
-        companyAddress: text(200),
-        hrdName: text(120),
-        hrdTitle: text(80),
-        coordinatorName: text(120),
-        managementName: text(120),
-        managementTitle: text(120),
-        numberCode: text(30).regex(/^[A-Za-z0-9.-]+$/, 'Kode nomor hanya huruf, angka, titik, dan strip'),
-        defaultReportPlace: text(150),
-      })
-      .parse(req.body);
-    await saveDisciplineSettings(body, currentUser(req).id);
-    res.json(body);
   }),
 );
 
