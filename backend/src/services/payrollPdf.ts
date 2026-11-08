@@ -359,11 +359,12 @@ export function sendCertificatePdf(res: Response, r: PayRow, m: PayrollMeta, fil
     { width: W, align: 'center' },
   );
   const y = 410;
+  
+  // Hanya menampilkan tanda tangan Management Mal saja
   const signs = [
-    ['Mengetahui,', m.kop.coordinatorTitle, m.kop.coordinatorName],
-    ...(m.kop.showManagementSign ? [['Mengetahui,', m.kop.managementTitle, m.kop.managementName]] : []),
-    [signDate(m.kop, fmtLongDate(m.printedAt)), `${m.kop.companyName} · ${m.kop.hrdTitle}`, m.kop.hrdName],
+    [signDate(m.kop, fmtLongDate(m.printedAt)), m.kop.managementTitle || 'Management Mal', m.kop.managementName],
   ];
+  
   const colW = W / signs.length;
   signs.forEach(([a, b, name], i) => {
     const cx = colW * i + 30;
