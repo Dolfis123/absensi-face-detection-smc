@@ -3,8 +3,8 @@ import { Link } from 'react-router-dom';
 import { Camera, CameraHandle } from '../components/Camera';
 import { Button } from '../components/ui';
 import { api, ApiError, errMsg, Geofence, SlotType } from '../lib/api';
-import { fmtMinutes, SLOT_LABEL, STATUS_STYLE } from '../lib/format';
-// haversine
+import { fmtMinutes, haversine, SLOT_LABEL, STATUS_STYLE } from '../lib/format';
+// 
 
 interface CheckResult {
   message: string;
@@ -92,9 +92,9 @@ export default function Absen() {
     return () => clearTimeout(t);
   }, [result, error]);
 
-  // const distance = geo && pos ? haversine(geo.latitude, geo.longitude, pos.latitude, pos.longitude) : null;
-  // const inside = distance !== null && geo !== null && distance <= geo.radiusMeters;
-  // const accurate = pos !== null && geo !== null && pos.accuracy <= geo.maxAccuracyMeters;
+  const distance = geo && pos ? haversine(geo.latitude, geo.longitude, pos.latitude, pos.longitude) : null;
+  const inside = distance !== null && geo !== null && distance <= geo.radiusMeters;
+  const accurate = pos !== null && geo !== null && pos.accuracy <= geo.maxAccuracyMeters;
 
   async function send(image: string, position: Position, pinCode?: string) {
     setSubmitting(true);
@@ -151,7 +151,7 @@ export default function Absen() {
 
         <Camera ref={camera} />
 
-        {/* <div className="grid grid-cols-2 gap-2 text-sm">
+        <div className="grid grid-cols-2 gap-2 text-sm">
           <div className={`rounded-xl p-3 ${inside ? 'bg-emerald-500/20 text-emerald-200' : 'bg-rose-500/20 text-rose-200'}`}>
             <div className="text-xs opacity-80">Jarak ke pos</div>
             <div className="text-lg font-bold">
@@ -163,7 +163,7 @@ export default function Absen() {
             <div className="text-xs opacity-80">Akurasi GPS</div>
             <div className="text-lg font-bold">{pos ? `±${Math.round(pos.accuracy)} m` : '—'}</div>
           </div>
-        </div> */}
+        </div> 
         {gpsError && <p className="text-center text-sm text-amber-300">{gpsError}</p>}
         <p className="text-center text-xs text-slate-400">
           Posisikan wajah di dalam oval, lepaskan masker/kacamata hitam, pastikan hanya satu orang di depan kamera.

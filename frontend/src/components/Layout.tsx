@@ -63,13 +63,13 @@ export const NAV_GROUPS: Record<Role, NavGroup[]> = {
       items: [
         { to: '/app/review-izin', label: 'Pengajuan Izin', icon: 'inbox' },
         { to: '/app/review-kendala', label: 'Laporan Kendala', icon: 'shield' },
-        { to: '/app/disiplin', label: 'Peringatan Disiplin', icon: 'userX' },
+        // { to: '/app/disiplin', label: 'Peringatan Disiplin', icon: 'userX' },
       ],
     },
     {
       title: 'Jadwal',
       items: [
-        { to: '/app/roster', label: 'Roster Shift', icon: 'calendar' },
+        // { to: '/app/roster', label: 'Roster Shift', icon: 'calendar' },
       ],
     },
     { title: 'Laporan', items: [{ to: '/app/laporan', label: 'Rekap & Unduh', icon: 'download' }] },
