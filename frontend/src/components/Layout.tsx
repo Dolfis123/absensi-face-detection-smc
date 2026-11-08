@@ -27,7 +27,7 @@ export const NAV_GROUPS: Record<Role, NavGroup[]> = {
       items: [
         { to: '/app/beranda', label: 'Beranda', icon: 'home', short: 'Beranda' },
         { to: '/app/rekap', label: 'Rekap Kehadiran', icon: 'chart', short: 'Rekap' },
-        { to: '/app/jadwal', label: 'Jadwal Shift', icon: 'calendar', short: 'Jadwal' },
+        // { to: '/app/jadwal', label: 'Jadwal Shift', icon: 'calendar', short: 'Jadwal' },
       ],
     },
     {
@@ -52,7 +52,7 @@ export const NAV_GROUPS: Record<Role, NavGroup[]> = {
       title: 'Kehadiran Saya',
       items: [
         { to: '/app/rekap', label: 'Rekap Saya', icon: 'chart' },
-        { to: '/app/jadwal', label: 'Jadwal Saya', icon: 'calendar' },
+        // { to: '/app/jadwal', label: 'Jadwal Saya', icon: 'calendar' },
         { to: '/app/izin', label: 'Izin / Sakit / Cuti', icon: 'send' },
         { to: '/app/kendala', label: 'Lapor Kendala', icon: 'alert' },
         { to: '/app/dokumen', label: 'Surat & Slip Saya', icon: 'fileText' },
