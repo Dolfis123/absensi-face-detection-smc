@@ -171,6 +171,18 @@ const MIGRATIONS: { id: string; up: () => Promise<void> }[] = [
       }
     },
   },
+  {
+    id: '2026-11-16-apriando-off-jumat',
+    async up() {
+      // Apriando libur (Off) hanya hari Jumat
+      const users = await User.findAll({ where: { fullName: { [Op.like]: 'Apriando%' }, role: ['KARYAWAN', 'KOORDINATOR'] } });
+      if (users.length !== 1) return; // nama tidak ditemukan / ganda → diatur manual di Aturan Karyawan
+      const existing = await RosterRule.findByPk(users[0].id);
+      if (existing) await existing.update({ offDays: [5] });
+      else
+        await RosterRule.create({ userId: users[0].id, fixedShiftId: null, offDays: [5], noShift1Days: [], noShift2Days: [1, 2, 3, 5], noSiangDays: [1, 2, 3, 5], female: false, active: true });
+    },
+  },
 ];
 
 export async function runMigrations() {
