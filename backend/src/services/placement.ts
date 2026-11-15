@@ -2,19 +2,23 @@
  * Penempatan (plotting) petugas ke pos jaga, digilir supaya setiap orang merata di semua pos.
  *
  * - Daftar pos disimpan di app_settings (bisa diubah Super Admin/Koordinator).
- * - Setiap hari, petugas satu shift dibagi ke pos sesuai urutan prioritas; bila orangnya lebih
- *   banyak dari jumlah pos, sisanya menjadi Cadangan. Koordinator tidak diplot.
+ * - Setiap hari, petugas satu shift mengisi pos pintu sesuai urutan prioritas; kelebihan orang
+ *   ditempatkan di area parkiran (pos lot), TIDAK ada Cadangan. Koordinator tidak diplot.
+ * - Petugas perempuan hanya di pos pintu (tidak di area parkiran). Petugas Shift Siang
+ *   ditempatkan di area parkiran untuk membantu Shift 2 di jam ramai.
  * - Pembagian memilih kombinasi dengan "biaya" terkecil: makin sering seseorang di pos itu,
  *   makin mahal; berada di pos yang sama dengan kemarin juga dihindari.
  */
 import { Op } from 'sequelize';
-import { AppSetting, EmployeeSchedule, ShiftChangeLog, User, sequelize } from '../models';
+import { AppSetting, EmployeeSchedule, RosterRule, Shift, ShiftChangeLog, User, sequelize } from '../models';
 import { addDays } from '../utils/time';
 
 export interface Post {
   code: string;
   area: string;
   name: string;
+  /** Area parkiran (lot): bisa diisi banyak orang sekaligus; bukan untuk petugas perempuan */
+  lot?: boolean;
 }
 export const RESERVE: Post = { code: 'CAD', area: 'Cadangan', name: 'Cadangan (bantu pos ramai & gantikan saat istirahat)' };
 
@@ -24,15 +28,18 @@ export const DEFAULT_POSTS: Post[] = [
   { code: 'CM', area: 'Lobi Cendrawasih', name: 'Pintu Masuk' },
   { code: 'KK', area: 'Lobi Kasuari — Area Parkiran', name: 'Pintu Keluar' },
   { code: 'KM', area: 'Lobi Kasuari — Area Parkiran', name: 'Pintu Masuk' },
-  { code: 'KL', area: 'Lobi Kasuari — Area Parkiran', name: 'Area Parkiran Lot' },
+  { code: 'KL', area: 'Lobi Kasuari — Area Parkiran', name: 'Area Parkiran Lot', lot: true },
 ];
+
+/** Daftar lama belum punya tanda "lot": kenali dari kode KL / nama yang memuat "Lot". */
+const withLot = (p: Post): Post => ({ ...p, lot: p.lot ?? (p.code === 'KL' || /\blot\b/i.test(p.name)) });
 
 export async function getPosts(): Promise<Post[]> {
   const row = await AppSetting.findByPk(POSTS_KEY);
   if (!row) return DEFAULT_POSTS;
   try {
     const list = JSON.parse(row.value) as Post[];
-    return Array.isArray(list) ? list : DEFAULT_POSTS;
+    return Array.isArray(list) ? list.map(withLot) : DEFAULT_POSTS;
   } catch {
     return DEFAULT_POSTS;
   }
@@ -55,15 +62,33 @@ export function postLabel(posts: Post[], code: string | null | undefined): strin
 
 export type History = Map<number, Map<string, number>>;
 
+export interface GroupRules {
+  /** Petugas perempuan: hanya pos pintu */
+  female: Set<number>;
+  /** Kelompok Shift Siang: ke area parkiran */
+  lotOnly?: boolean;
+}
+
 /**
  * Membagi pos untuk satu kelompok (orang satu shift di satu hari) dengan biaya total terkecil.
+ * Pos pintu diisi dulu (satu orang per pos), kelebihannya ke pos lot (boleh banyak orang).
  * Pencarian lengkap memakai DP bitmask (kelompok kecil, ≤ ±15 orang), jadi hasilnya optimal dan deterministik.
  */
-export function assignGroup(people: number[], posts: string[], history: History, last: Map<number, string | null>): Map<number, string> {
+export function assignGroup(people: number[], posts: Post[], history: History, last: Map<number, string | null>, rules: GroupRules = { female: new Set() }): Map<number, string> {
   const n = people.length;
-  const slots = [...posts.slice(0, n), ...Array.from({ length: Math.max(0, n - posts.length) }, () => RESERVE.code)];
+  const gates = posts.filter((p) => !p.lot).map((p) => p.code);
+  const lots = posts.filter((p) => p.lot).map((p) => p.code);
+  const extra = (k: number) => (lots.length ? lots[k % lots.length] : RESERVE.code);
+  const slots =
+    rules.lotOnly && lots.length
+      ? Array.from({ length: n }, (_, k) => extra(k))
+      : [...gates.slice(0, n), ...Array.from({ length: Math.max(0, n - gates.length) }, (_, k) => extra(k))];
+  const isLot = (slot: string) => slot === RESERVE.code || lots.includes(slot);
   const cost = (p: number, slot: string) =>
-    (history.get(p)?.get(slot) ?? 0) * 10 + (last.get(p) === slot ? 6 : 0) + ((p * 31 + slot.charCodeAt(0) * 7 + slot.charCodeAt(1)) % 13) / 100;
+    (rules.female.has(p) && isLot(slot) ? 1000 : 0) + // perempuan tidak di area parkiran
+    (history.get(p)?.get(slot) ?? 0) * 10 +
+    (last.get(p) === slot ? 6 : 0) +
+    ((p * 31 + slot.charCodeAt(0) * 7 + slot.charCodeAt(1)) % 13) / 100;
   // dp[mask] = biaya minimum menempatkan orang 0..popcount(mask)-1 pada slot di mask
   const size = 1 << n;
   const dp = new Float64Array(size).fill(Infinity);
@@ -76,8 +101,8 @@ export function assignGroup(people: number[], posts: string[], history: History,
     if (i >= n) continue;
     for (let s = 0; s < n; s++) {
       if (mask & (1 << s)) continue;
-      // Slot Cadangan identik: cukup isi yang pertama yang masih kosong
-      if (slots[s] === RESERVE.code && s > 0 && slots[s - 1] === RESERVE.code && !(mask & (1 << (s - 1)))) continue;
+      // Slot identik (mis. beberapa orang di pos lot yang sama): cukup isi yang pertama yang masih kosong
+      if (s > 0 && slots[s] === slots[s - 1] && !(mask & (1 << (s - 1)))) continue;
       const next = mask | (1 << s);
       const c = dp[mask] + cost(people[i], slots[s]);
       if (c < dp[next]) {
@@ -99,18 +124,24 @@ export function assignGroup(people: number[], posts: string[], history: History,
 export interface PlacementDay {
   date: string;
   /** Kelompok per shift: daftar userId yang diplot (tanpa koordinator) */
-  groups: number[][];
+  groups: { shiftId: number; ids: number[] }[];
+}
+
+export interface PlacementRules {
+  female: Set<number>;
+  siangId: number | null;
 }
 
 /** Membagi pos untuk beberapa hari berurutan; riwayat ikut diperbarui hari demi hari. */
-export function assignPlacements(days: PlacementDay[], posts: string[], history: History, last: Map<number, string | null>) {
+export function assignPlacements(days: PlacementDay[], posts: Post[], history: History, last: Map<number, string | null>, rules: PlacementRules) {
   const result = new Map<string, string>(); // `${userId}|${date}` → kode pos
   const sorted = [...days].sort((a, b) => a.date.localeCompare(b.date));
   for (const day of sorted) {
     const today = new Map<number, string | null>();
     for (const group of day.groups) {
-      const people = [...group].sort((a, b) => a - b);
-      for (const [p, code] of assignGroup(people, posts, history, last)) {
+      const people = [...group.ids].sort((a, b) => a - b);
+      const lotOnly = rules.siangId !== null && group.shiftId === rules.siangId;
+      for (const [p, code] of assignGroup(people, posts, history, last, { female: rules.female, lotOnly })) {
         result.set(`${p}|${day.date}`, code);
         const h = history.get(p) ?? new Map<string, number>();
         h.set(code, (h.get(code) ?? 0) + 1);
@@ -145,30 +176,42 @@ export async function loadHistory(from: string) {
   return { history, last };
 }
 
-/** Siapa saja yang tidak diplot (koordinator). */
-export async function plottedUserFilter() {
-  const coordinators = await User.findAll({ where: { role: 'KOORDINATOR' }, attributes: ['id'] });
+/** Siapa saja yang tidak diplot (koordinator), siapa petugas perempuan, dan id Shift Siang. */
+export async function placementRules() {
+  const [coordinators, women, siang] = await Promise.all([
+    User.findAll({ where: { role: 'KOORDINATOR' }, attributes: ['id'] }),
+    RosterRule.findAll({ where: { female: true }, attributes: ['userId'] }),
+    Shift.findOne({ where: { code: 'SHIFT_SIANG' } }),
+  ]);
   const skip = new Set(coordinators.map((u) => u.id));
-  return (userId: number) => !skip.has(userId);
+  return {
+    plotted: (userId: number) => !skip.has(userId),
+    rules: { female: new Set(women.map((r) => r.userId)), siangId: siang?.id ?? null } as PlacementRules,
+  };
+}
+
+/** Kelompokkan jadwal satu hari per shift (urut id shift supaya hasil stabil). */
+export function groupsOf(entries: { userId: number; shiftId: number }[]) {
+  const by = new Map<number, number[]>();
+  for (const e of entries) by.set(e.shiftId, [...(by.get(e.shiftId) ?? []), e.userId]);
+  return [...by.entries()].sort((a, b) => a[0] - b[0]).map(([shiftId, ids]) => ({ shiftId, ids }));
 }
 
 /** Hitung ulang penempatan untuk roster tersimpan pada rentang tanggal (dipanggil setiap roster berubah). */
 export async function rebalancePlacements(from: string, to: string) {
-  const [posts, plotted, schedules, start] = await Promise.all([
+  const [posts, { plotted, rules }, schedules, start] = await Promise.all([
     getPosts(),
-    plottedUserFilter(),
+    placementRules(),
     EmployeeSchedule.findAll({ where: { date: { [Op.between]: [from, to] } } }),
     loadHistory(from),
   ]);
-  const byDate = new Map<string, Map<number, number[]>>();
+  const byDate = new Map<string, { userId: number; shiftId: number }[]>();
   for (const s of schedules) {
     if (s.shiftId === null || !plotted(s.userId)) continue;
-    const day = byDate.get(s.date) ?? new Map<number, number[]>();
-    day.set(s.shiftId, [...(day.get(s.shiftId) ?? []), s.userId]);
-    byDate.set(s.date, day);
+    byDate.set(s.date, [...(byDate.get(s.date) ?? []), { userId: s.userId, shiftId: s.shiftId }]);
   }
-  const days: PlacementDay[] = [...byDate].map(([date, groups]) => ({ date, groups: [...groups.entries()].sort((a, b) => a[0] - b[0]).map(([, ids]) => ids) }));
-  const result = assignPlacements(days, posts.map((p) => p.code), start.history, start.last);
+  const days: PlacementDay[] = [...byDate].map(([date, entries]) => ({ date, groups: groupsOf(entries) }));
+  const result = assignPlacements(days, posts, start.history, start.last, rules);
   await sequelize.transaction(async (transaction) => {
     for (const s of schedules) {
       const post = result.get(`${s.userId}|${s.date}`) ?? null;

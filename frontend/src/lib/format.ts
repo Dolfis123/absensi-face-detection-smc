@@ -108,6 +108,8 @@ export function shiftColorCls(code?: string) {
       return 'bg-[#FACC15] text-gray-900';
     case 'SHIFT_2':
       return 'bg-[#1D4ED8] text-white';
+    case 'SHIFT_SIANG':
+      return 'bg-[#0D9488] text-white';
     case 'SHIFT_PENUH':
       return 'bg-[#7C3AED] text-white';
     default:
@@ -123,4 +125,4 @@ export const OFF_STYLE = {
     'linear-gradient(to top left, transparent calc(50% - 0.75px), rgba(255,255,255,.55) 50%, transparent calc(50% + 0.75px))',
 };
 /** Singkatan shift untuk sel roster: S1, S2, PENUH */
-export const shiftShort = (s: { code: string; name: string }) => (s.code === 'SHIFT_PENUH' ? 'PENUH' : s.name.replace(/^Shift\s*/i, 'S').toUpperCase());
+export const shiftShort = (s: { code: string; name: string }) => (s.code === 'SHIFT_PENUH' ? 'PENUH' : s.code === 'SHIFT_SIANG' ? 'SIANG' : s.name.replace(/^Shift\s*/i, 'S').toUpperCase());

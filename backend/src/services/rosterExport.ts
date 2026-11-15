@@ -17,7 +17,7 @@ const DAY_SHORT = ['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab'];
 const weekday = (iso: string) => new Date(`${iso}T00:00:00Z`).getUTCDay();
 const ddmm = (iso: string) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}`;
 
-type Kind = 'S1' | 'S2' | 'FULL' | 'OTHER' | 'OFF' | 'HOLIDAY' | 'EMPTY';
+type Kind = 'S1' | 'S2' | 'SG' | 'FULL' | 'OTHER' | 'OFF' | 'HOLIDAY' | 'EMPTY';
 /**
  * Warna & teks tiap jenis sel; dipakai bersama oleh PDF, Excel, dan keterangan.
  * S1 kuning (matahari/pagi), S2 biru tua (malam), PENUH ungu (koordinator), OFF merah (berhenti/libur).
@@ -26,6 +26,7 @@ type Kind = 'S1' | 'S2' | 'FULL' | 'OTHER' | 'OFF' | 'HOLIDAY' | 'EMPTY';
 const STYLE: Record<Kind, { fill: string; ink: string }> = {
   S1: { fill: '#FACC15', ink: '#111827' },
   S2: { fill: '#1D4ED8', ink: '#FFFFFF' },
+  SG: { fill: '#0D9488', ink: '#FFFFFF' },
   FULL: { fill: '#7C3AED', ink: '#FFFFFF' },
   OTHER: { fill: '#F97316', ink: '#FFFFFF' },
   OFF: { fill: '#DC2626', ink: '#FFFFFF' },
@@ -53,8 +54,8 @@ export interface RosterData {
   org: OrgSettings;
 }
 
-const kindOf = (s: Shift): Kind => (s.code === 'SHIFT_1' ? 'S1' : s.code === 'SHIFT_2' ? 'S2' : s.code === 'SHIFT_PENUH' ? 'FULL' : 'OTHER');
-const symbolOf = (s: Shift) => (s.code === 'SHIFT_PENUH' ? 'PENUH' : s.name.replace(/^Shift\s*/i, 'S').toUpperCase());
+const kindOf = (s: Shift): Kind => (s.code === 'SHIFT_1' ? 'S1' : s.code === 'SHIFT_2' ? 'S2' : s.code === 'SHIFT_SIANG' ? 'SG' : s.code === 'SHIFT_PENUH' ? 'FULL' : 'OTHER');
+const symbolOf = (s: Shift) => (s.code === 'SHIFT_PENUH' ? 'PENUH' : s.code === 'SHIFT_SIANG' ? 'SIANG' : s.name.replace(/^Shift\s*/i, 'S').toUpperCase());
 
 export async function loadRosterData(from: string, to: string): Promise<RosterData> {
   const dates = eachDate(from, to);
@@ -103,7 +104,7 @@ export async function loadRosterData(from: string, to: string): Promise<RosterDa
 }
 
 function counts(cells: RosterCell[]) {
-  const c: Record<Kind, number> = { S1: 0, S2: 0, FULL: 0, OTHER: 0, OFF: 0, HOLIDAY: 0, EMPTY: 0 };
+  const c: Record<Kind, number> = { S1: 0, S2: 0, SG: 0, FULL: 0, OTHER: 0, OFF: 0, HOLIDAY: 0, EMPTY: 0 };
   for (const x of cells) c[x.kind]++;
   return c;
 }
@@ -234,9 +235,11 @@ export function sendRosterPdf(res: Response, r: RosterData, generatedBy: string,
     week.forEach((_, i) => {
       const day = counts(r.rows.map((row) => row.cells[start + i]));
       const x = MARGIN + nameW + i * colW;
-      const parts = [day.S1 && `S1: ${day.S1}`, day.S2 && `S2: ${day.S2}`, day.FULL && `Penuh: ${day.FULL}`].filter(Boolean).join('  ');
-      doc.font('Helvetica').fontSize(7.5).fillColor(INK).text(parts || '—', x, y + 4, { width: colW, align: 'center' });
-      doc.fillColor(MUTED).text(`Off: ${day.OFF}`, x, y + 14, { width: colW, align: 'center' });
+      // Dua baris tetap: jumlah per shift rotasi, lalu Shift Penuh + Off (supaya tidak saling menimpa)
+      const parts = [day.S1 && `S1: ${day.S1}`, day.SG && `Siang: ${day.SG}`, day.S2 && `S2: ${day.S2}`].filter(Boolean).join('  ');
+      const second = [day.FULL && `Penuh: ${day.FULL}`, `Off: ${day.OFF}`].filter(Boolean).join('  ');
+      doc.font('Helvetica').fontSize(7.5).fillColor(INK).text(parts || '—', x, y + 4, { width: colW, align: 'center', lineBreak: false });
+      doc.fillColor(MUTED).text(second, x, y + 14, { width: colW, align: 'center', lineBreak: false });
     });
     y += 34;
 
@@ -545,7 +548,9 @@ export async function buildWhatsappText(date: string): Promise<string> {
   const working = rows.filter((s) => s.shiftId !== null);
   const coordNames = working.filter((s) => coordinators.has(s.userId)).map((s) => name.get(s.userId)!);
   const coordText = coordNames.length ? coordNames.join(', ') : 'Off hari ini';
-  const rotation = shifts.filter((sh) => working.some((s) => s.shiftId === sh.id && !coordinators.has(s.userId)));
+  const rotation = shifts
+    .filter((sh) => working.some((s) => s.shiftId === sh.id && !coordinators.has(s.userId)))
+    .sort((a, b) => a.startTime.localeCompare(b.startTime) || a.id - b.id);
 
   const out: string[] = [];
   out.push('📅 *JADWAL SHIFT PETUGAS PARKIRAN*', '', org.placeName, `📅 Berlaku: *${longDate(date)}*`);
@@ -560,14 +565,16 @@ export async function buildWhatsappText(date: string): Promise<string> {
       .sort((a, b) => name.get(a.userId)!.localeCompare(name.get(b.userId)!));
     out.push('', `*${sh.name.toUpperCase()} — ${partOfDay(sh.startTime)} – ${partOfDay(sh.endTime)} · ${dot(sh.startTime)} – ${dot(sh.endTime)}*`, '', `Koordinator: ${coordText}`, '', 'Anggota:', '');
     members.forEach((m, i) => out.push(`${i + 1}. ${name.get(m.userId)}`));
-    const byPost = new Map(members.filter((m) => m.post).map((m) => [m.post!, name.get(m.userId)!]));
+    // Satu pos bisa berisi beberapa orang (mis. area parkiran / lot)
+    const byPost = new Map<string, string[]>();
+    for (const m of members.filter((x) => x.post)) byPost.set(m.post!, [...(byPost.get(m.post!) ?? []), name.get(m.userId)!]);
     if (byPost.size) {
       out.push('', '📍 *PENEMPATAN (PLOTTING):*');
       for (const area of [...new Set(posts.map((p) => p.area))]) {
         const inArea = posts.filter((p) => p.area === area && byPost.has(p.code));
         if (!inArea.length) continue;
         out.push('', `🔹 ${area}`, '');
-        for (const p of inArea) out.push(`- ${p.name} : ${byPost.get(p.code)}`);
+        for (const p of inArea) out.push(`- ${p.name} : ${byPost.get(p.code)!.join(', ')}`);
       }
       const reserve = members.filter((m) => m.post === RESERVE.code).map((m) => name.get(m.userId));
       if (reserve.length) out.push('', `🔸 Cadangan (bantu pos ramai & gantikan saat istirahat): ${reserve.join(', ')}`);

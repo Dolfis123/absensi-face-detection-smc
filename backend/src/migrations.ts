@@ -11,6 +11,22 @@ import { addDays, hhmmToMinutes, minutesToHhmm, witNow } from './utils/time';
  */
 const MIGRATIONS: { id: string; up: () => Promise<void> }[] = [
   {
+    // Paling awal: migrasi lain (mis. aturan roster SMC) membaca tabel roster_rules lewat model,
+    // jadi kolom barunya harus sudah ada lebih dulu — juga untuk database yang dipulihkan dari backup lama.
+    id: '2026-11-15-roster-rules-kolom-siang',
+    async up() {
+      // Kolom aturan baru di roster_rules (tidak menyentuh tabel users / data wajah)
+      const cols = await sequelize.query<{ COLUMN_NAME: string }>(
+        "SELECT COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'roster_rules'",
+        { type: QueryTypes.SELECT },
+      );
+      const has = new Set(cols.map((c) => c.COLUMN_NAME));
+      if (!has.has('no_siang_days')) await sequelize.query("ALTER TABLE `roster_rules` ADD COLUMN `no_siang_days` JSON NULL");
+      await sequelize.query("UPDATE `roster_rules` SET `no_siang_days` = '[]' WHERE `no_siang_days` IS NULL");
+      if (!has.has('female')) await sequelize.query('ALTER TABLE `roster_rules` ADD COLUMN `female` TINYINT(1) NOT NULL DEFAULT 0');
+    },
+  },
+  {
     id: '2026-10-28-istirahat-bergantian',
     async up() {
       // 1) Tambah nilai enum KEMBALI (selesai istirahat). ALTER tidak memicu trigger.
@@ -130,6 +146,28 @@ const MIGRATIONS: { id: string; up: () => Promise<void> }[] = [
           !existing ||
           (days(existing.offDays).length === 7 && days(existing.noShift1Days).length === 0 && days(existing.noShift2Days).length === 0);
         if (untouched) await RosterRule.upsert({ userId: users[0].id, ...p.rule, active: existing?.active ?? true });
+      }
+    },
+  },
+  {
+    id: '2026-11-15-shift-siang-aturan',
+    async up() {
+      // Aturan yang disepakati: Putri perempuan (tidak Shift Siang, tidak di area parkiran) dan
+      // hari Minggu wajib Shift 1 (tidak Shift 2); Apriando Senin/Selasa/Rabu/Jumat hanya Shift 1
+      const ALL = [0, 1, 2, 3, 4, 5, 6];
+      const days = (v: unknown) => (typeof v === 'string' ? (JSON.parse(v) as number[]) : ((v as number[]) ?? []));
+      const presets: { name: string; set: { female?: boolean; noSiangDays?: number[] }; addNoShift2?: number[] }[] = [
+        { name: 'Putri%', set: { female: true, noSiangDays: ALL }, addNoShift2: [0] },
+        { name: 'Apriando%', set: { noSiangDays: [1, 2, 3, 5] } },
+      ];
+      for (const p of presets) {
+        const users = await User.findAll({ where: { fullName: { [Op.like]: p.name }, role: ['KARYAWAN', 'KOORDINATOR'] } });
+        if (users.length !== 1) continue; // nama tidak ditemukan / ganda → diatur manual
+        const existing = await RosterRule.findByPk(users[0].id);
+        // Hari "tidak Shift 2" ditambahkan ke isian yang sudah ada, tidak menimpanya
+        const noShift2Days = [...new Set([...days(existing?.noShift2Days), ...(p.addNoShift2 ?? [])])].sort();
+        if (existing) await existing.update({ ...p.set, noShift2Days });
+        else await RosterRule.create({ userId: users[0].id, fixedShiftId: null, offDays: ALL, noShift1Days: [], noShift2Days, noSiangDays: [], female: false, active: true, ...p.set });
       }
     },
   },

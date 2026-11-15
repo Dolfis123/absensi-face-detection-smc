@@ -472,6 +472,10 @@ export class RosterRule extends Model<InferAttributes<RosterRule>, InferCreation
   /** Hari yang tidak boleh Shift 1 / Shift 2. */
   declare noShift1Days: number[];
   declare noShift2Days: number[];
+  /** Hari yang tidak boleh Shift Siang. */
+  declare noSiangDays: CreationOptional<number[]>;
+  /** Petugas perempuan: tidak pernah Shift Siang dan tidak ditempatkan di area parkiran (lot). */
+  declare female: CreationOptional<boolean>;
   /** Ikut dibuatkan roster otomatis. */
   declare active: boolean;
   declare updatedAt: CreationOptional<Date>;
@@ -483,6 +487,8 @@ RosterRule.init(
     offDays: { type: DataTypes.JSON, allowNull: false },
     noShift1Days: { type: DataTypes.JSON, allowNull: false },
     noShift2Days: { type: DataTypes.JSON, allowNull: false },
+    noSiangDays: { type: DataTypes.JSON, allowNull: false, defaultValue: [] },
+    female: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
     active: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: true },
     updatedAt: DataTypes.DATE,
   },

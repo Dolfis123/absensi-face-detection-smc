@@ -17,6 +17,8 @@ interface Rule {
   offDays: number[];
   noShift1Days: number[];
   noShift2Days: number[];
+  noSiangDays: number[];
+  female: boolean;
   active: boolean;
 }
 interface RulesResponse {
@@ -24,12 +26,14 @@ interface RulesResponse {
   shifts: { id: number; code: string; name: string; startTime: string; endTime: string }[];
   shift1Id: number;
   shift2Id: number;
+  siangId: number | null;
 }
 type Cell = number | 'OFF' | null;
 interface Post {
   code: string;
   area: string;
   name: string;
+  lot?: boolean;
 }
 interface Preview {
   start: string;
@@ -43,6 +47,7 @@ interface Preview {
     name: string;
     shift1: number;
     shift2: number;
+    siang: number;
     fixed: number;
     off: number;
     weekendOff: number;
@@ -50,7 +55,7 @@ interface Preview {
     offByWeekday: number[];
     maxSameMate: number;
   }[];
-  daily: { date: string; shift1: number; shift2: number; fixed: number; off: number }[];
+  daily: { date: string; shift1: number; shift2: number; siang: number; fixed: number; off: number }[];
   warnings: string[];
   existingSchedules: number;
   engine: { used: 'SOLVER' | 'LAMA'; status: string | null; wallTime: number | null; note: string | null };
@@ -116,14 +121,18 @@ function PostsEditor({ onSaved }: { onSaved: () => void }) {
     <Card
       className="mt-4"
       title="Pos Penempatan (Plotting)"
-      subtitle="Setiap shift dibagi ke pos-pos ini secara bergilir. Urutan = prioritas: bila petugas kurang, pos paling bawah dikosongkan; bila lebih, sisanya jadi Cadangan."
+      subtitle="Pos pintu diisi satu orang secara bergilir (urutan = prioritas: bila petugas kurang, pos pintu paling bawah dikosongkan). Kelebihan orang dan petugas Shift Siang ditempatkan di pos bertanda Area Parkiran (lot). Tidak ada Cadangan. Petugas perempuan hanya di pos pintu."
     >
       <div className="space-y-2">
         {list.map((p, i) => (
-          <div key={i} className="grid grid-cols-[4.5rem_1fr_1fr_auto] items-center gap-2">
+          <div key={i} className="grid grid-cols-[4.5rem_1fr_1fr_auto_auto] items-center gap-2">
             <Input value={p.code} maxLength={6} onChange={(e) => set(i, { code: e.target.value.toUpperCase() })} placeholder="Kode" />
             <Input value={p.area} onChange={(e) => set(i, { area: e.target.value })} placeholder="Area, mis. Lobi Cendrawasih" />
             <Input value={p.name} onChange={(e) => set(i, { name: e.target.value })} placeholder="Pos, mis. Pintu Keluar" />
+            <label className="flex items-center gap-1 whitespace-nowrap text-xs text-slate-600" title="Area parkiran: bisa diisi banyak orang, bukan untuk petugas perempuan">
+              <input type="checkbox" checked={!!p.lot} onChange={(e) => set(i, { lot: e.target.checked })} />
+              Area parkiran
+            </label>
             <Button variant="ghost" onClick={() => setDraft(list.filter((_, j) => j !== i))} disabled={list.length <= 1} title="Hapus pos">
               ✕
             </Button>
@@ -159,7 +168,8 @@ export default function RosterOtomatis() {
   const nextMonday = mondayOf(today) === today ? today : addDays(mondayOf(today), 7);
   const [start, setStart] = useState(nextMonday);
   const [weeks, setWeeks] = useState(RECOMMENDED_WEEKS);
-  const [shift2Extra, setShift2Extra] = useState(1);
+  const [shift1Count, setShift1Count] = useState(3);
+  const [siangCount, setSiangCount] = useState(2);
   const [engine, setEngine] = useState<'SOLVER' | 'LAMA'>('SOLVER');
   const [preview, setPreview] = useState<Preview | null>(null);
   const [generating, setGenerating] = useState(false);
@@ -167,19 +177,19 @@ export default function RosterOtomatis() {
   const [genError, setGenError] = useState<string | null>(null);
   const [saved, setSaved] = useState<{ from: string; to: string } | null>(null);
 
-  useEffect(() => setPreview(null), [start, weeks, shift2Extra, engine]);
+  useEffect(() => setPreview(null), [start, weeks, shift1Count, siangCount, engine]);
 
   if (loading && !data) return <Loading />;
   if (!data) return <Alert>{error}</Alert>;
   const shiftById = new Map(data.shifts.map((s) => [s.id, s]));
-  const shiftName = (id: number | null) => (id === null ? 'Digilir Shift 1 / Shift 2' : (shiftById.get(id)?.name ?? '?'));
+  const shiftName = (id: number | null) => (id === null ? (data.siangId ? 'Digilir Shift 1 / Siang / 2' : 'Digilir Shift 1 / Shift 2') : (shiftById.get(id)?.name ?? '?'));
 
   async function saveRule() {
     if (!editing) return;
     setSavingRule(true);
     try {
-      const { userId, fixedShiftId, offDays, noShift1Days, noShift2Days, active } = editing;
-      await api.put(`/admin/roster/rules/${userId}`, { fixedShiftId, offDays, noShift1Days, noShift2Days, active });
+      const { userId, fixedShiftId, offDays, noShift1Days, noShift2Days, noSiangDays, female, active } = editing;
+      await api.put(`/admin/roster/rules/${userId}`, { fixedShiftId, offDays, noShift1Days, noShift2Days, noSiangDays, female, active });
       toast(`Aturan ${editing.fullName} disimpan`);
       setEditing(null);
       setPreview(null);
@@ -195,7 +205,7 @@ export default function RosterOtomatis() {
     setGenerating(true);
     setGenError(null);
     try {
-      setPreview(await api.post<Preview>('/admin/roster/generate', { start, weeks, shift2Extra, engine }));
+      setPreview(await api.post<Preview>('/admin/roster/generate', { start, weeks, shift1Count, siangCount: data!.siangId ? siangCount : 0, engine }));
     } catch (e) {
       setGenError(errMsg(e));
     } finally {
@@ -243,13 +253,13 @@ export default function RosterOtomatis() {
   }
 
   const cellCls = (v: Cell) => (v === 'OFF' ? OFF_CLS : v === null ? EMPTY_CLS : shiftColorCls(shiftById.get(v)?.code));
-  const cellText = (v: Cell) => (v === 'OFF' ? 'Off' : v === data.shift1Id ? '1' : v === data.shift2Id ? '2' : v === null ? '·' : 'P');
+  const cellText = (v: Cell) => (v === 'OFF' ? 'Off' : v === data.shift1Id ? '1' : v === data.shift2Id ? '2' : v !== null && v === data.siangId ? 'Si' : v === null ? '·' : 'P');
 
   return (
     <>
       <PageHeader
         title="Roster Otomatis"
-        subtitle="Buat roster beberapa minggu sekaligus (disarankan 7 minggu). Shift 1, Shift 2, dan hari Off dibagi rata sesuai aturan tiap karyawan."
+        subtitle="Buat roster beberapa minggu sekaligus (disarankan 7 minggu). Shift 1, Shift Siang, Shift 2, dan hari Off dibagi rata sesuai aturan tiap karyawan."
         actions={
           <Link to="/app/roster">
             <Button variant="secondary" icon="calendar">
@@ -289,9 +299,11 @@ export default function RosterOtomatis() {
                   <Td className="text-sm">{shiftName(r.fixedShiftId)}</Td>
                   <Td className="text-sm">{daysText(r.offDays)}</Td>
                   <Td className="text-xs">
+                    {r.female && <div className="font-medium text-pink-700">Perempuan: pos pintu saja, tanpa Shift Siang</div>}
                     {r.noShift1Days.length > 0 && <div className="text-sky-700">Tidak Shift 1: {daysText(r.noShift1Days)}</div>}
                     {r.noShift2Days.length > 0 && <div className="text-violet-700">Tidak Shift 2: {daysText(r.noShift2Days)}</div>}
-                    {r.noShift1Days.length + r.noShift2Days.length === 0 && <span className="text-slate-400">—</span>}
+                    {!r.female && r.noSiangDays.length > 0 && <div className="text-teal-700">Tidak Shift Siang: {daysText(r.noSiangDays)}</div>}
+                    {r.noShift1Days.length + r.noShift2Days.length + r.noSiangDays.length === 0 && !r.female && <span className="text-slate-400">—</span>}
                   </Td>
                   <Td>
                     <Button variant="ghost" onClick={() => setEditing({ ...r })}>
@@ -330,18 +342,29 @@ export default function RosterOtomatis() {
                 <option value="LAMA">Lama (hari demi hari)</option>
               </Select>
             </Field>
-            <Field label="Shift 2 lebih banyak dari Shift 1" hint="Selisih minimal jumlah orang Shift 2 dibanding Shift 1 setiap hari">
-              <Select value={shift2Extra} onChange={(e) => setShift2Extra(Number(e.target.value))}>
-                {[0, 1, 2, 3].map((n) => (
-                  <option key={n} value={n}>
-                    {n === 0 ? 'Sama banyak' : `+${n} orang`}
-                  </option>
-                ))}
-              </Select>
-            </Field>
+            <div className="grid grid-cols-2 gap-2">
+              <Field label="Petugas Shift 1 per hari" hint="Di luar Koordinator">
+                <Select value={shift1Count} onChange={(e) => setShift1Count(Number(e.target.value))}>
+                  {[2, 3, 4, 5, 6].map((n) => (
+                    <option key={n} value={n}>
+                      {n} orang
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+              <Field label="Shift Siang per hari" hint={data.siangId ? '14.00–22.00, khusus pria' : 'Shift Siang belum ada'}>
+                <Select value={data.siangId ? siangCount : 0} disabled={!data.siangId} onChange={(e) => setSiangCount(Number(e.target.value))}>
+                  {[0, 1, 2, 3, 4].map((n) => (
+                    <option key={n} value={n}>
+                      {n === 0 ? 'Tanpa Shift Siang' : `${n} orang`}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+            </div>
             <p className="text-xs text-slate-500">
-              Periode: {fmtDate(start, false)} – {fmtDate(addDays(start, weeks * 7 - 1), false)} · 1 hari Off per orang per minggu · Hari
-              libur nasional dilewati.
+              Periode: {fmtDate(start, false)} – {fmtDate(addDays(start, weeks * 7 - 1), false)} · 1 hari Off per orang per minggu · sisanya
+              Shift 2 · Hari libur nasional dilewati.
             </p>
             {genError && <Alert>{genError}</Alert>}
             <Button className="w-full" onClick={generate} loading={generating}>
@@ -370,7 +393,7 @@ export default function RosterOtomatis() {
           <Card
             className="mt-4"
             title="3. Pratinjau Roster"
-            subtitle={`${fmtDate(preview.start, false)} – ${fmtDate(preview.end, false)} · 1 = Shift 1, 2 = Shift 2, P = Shift Penuh, Off = libur pribadi`}
+            subtitle={`${fmtDate(preview.start, false)} – ${fmtDate(preview.end, false)} · 1 = Shift 1, Si = Shift Siang, 2 = Shift 2, P = Shift Penuh, Off = libur pribadi`}
             actions={
               <div className="flex gap-2">
                 <Button variant="secondary" onClick={generate} loading={generating}>
@@ -403,7 +426,7 @@ export default function RosterOtomatis() {
                 Semua aturan karyawan terpenuhi (sudah dicek sistem per tanggal):
                 <ul className="mt-1 list-disc pl-4">
                   {data.rules
-                    .filter((r) => r.active && (r.fixedShiftId !== null || r.offDays.length < 7 || r.noShift1Days.length || r.noShift2Days.length))
+                    .filter((r) => r.active && (r.fixedShiftId !== null || r.offDays.length < 7 || r.noShift1Days.length || r.noShift2Days.length || r.noSiangDays.length || r.female))
                     .map((r) => (
                       <li key={r.userId}>
                         <b>{r.fullName}</b>:{' '}
@@ -412,6 +435,8 @@ export default function RosterOtomatis() {
                           r.offDays.length < 7 && `Off hanya ${daysText(r.offDays)}`,
                           r.noShift1Days.length > 0 && `${daysText(r.noShift1Days)} tidak Shift 1`,
                           r.noShift2Days.length > 0 && `${daysText(r.noShift2Days)} tidak Shift 2`,
+                          r.female && 'perempuan: tidak Shift Siang, tidak di area parkiran',
+                          !r.female && r.noSiangDays.length > 0 && `${daysText(r.noSiangDays)} tidak Shift Siang`,
                         ]
                           .filter(Boolean)
                           .join(' · ')}
@@ -467,10 +492,10 @@ export default function RosterOtomatis() {
                     </tr>
                   ))}
                   <tr className="border-t border-slate-200 text-slate-500">
-                    <td className="sticky left-0 bg-white px-2 py-1">Jumlah Shift 1 / Shift 2</td>
+                    <td className="sticky left-0 bg-white px-2 py-1">Jumlah Shift 1 / Siang / Shift 2</td>
                     {preview.daily.map((d) => (
                       <td key={d.date} className="p-0.5 text-center text-[10px] leading-tight">
-                        {d.shift1}/{d.shift2}
+                        {d.shift1}/{d.siang}/{d.shift2}
                       </td>
                     ))}
                   </tr>
@@ -489,7 +514,7 @@ export default function RosterOtomatis() {
                 <thead>
                   <tr>
                     <Th>Petugas</Th>
-                    {[...preview.posts, { code: 'CAD', area: '', name: 'Cadangan' }].map((p) => (
+                    {[...preview.posts, ...(preview.rows.some((r) => r.posts.includes('CAD')) ? [{ code: 'CAD', area: '', name: 'Cadangan' }] : [])].map((p) => (
                       <Th key={p.code} className="text-center">
                         <div>{p.code}</div>
                         <div className="text-[10px] font-normal normal-case">{p.name}</div>
@@ -503,7 +528,7 @@ export default function RosterOtomatis() {
                     .map((r) => (
                       <tr key={r.userId}>
                         <Td className="font-medium">{r.fullName}</Td>
-                        {[...preview.posts.map((p) => p.code), 'CAD'].map((code) => (
+                        {[...preview.posts.map((p) => p.code), ...(preview.rows.some((x) => x.posts.includes('CAD')) ? ['CAD'] : [])].map((code) => (
                           <Td key={code} className="text-center">
                             {r.posts.filter((x) => x === code).length || '—'}
                           </Td>
@@ -513,7 +538,7 @@ export default function RosterOtomatis() {
                 </tbody>
               </Table>
               <p className="mt-2 text-xs text-slate-500">
-                {preview.posts.map((p) => `${p.code} = ${p.area} — ${p.name}`).join(' · ')} · CAD = Cadangan (bantu pos ramai & gantikan saat istirahat)
+                {preview.posts.map((p) => `${p.code} = ${p.area} — ${p.name}${p.lot ? ' (area parkiran)' : ''}`).join(' · ')}
               </p>
             </Card>
           )}
@@ -524,6 +549,7 @@ export default function RosterOtomatis() {
                 <tr>
                   <Th>Karyawan</Th>
                   <Th className="text-center">Shift 1</Th>
+                  <Th className="text-center">Shift Siang</Th>
                   <Th className="text-center">Shift 2</Th>
                   <Th className="text-center">Shift Penuh</Th>
                   <Th className="text-center">Off</Th>
@@ -538,6 +564,7 @@ export default function RosterOtomatis() {
                   <tr key={s.userId}>
                     <Td className="font-medium">{s.name}</Td>
                     <Td className="text-center">{s.shift1 || '—'}</Td>
+                    <Td className="text-center">{s.siang || '—'}</Td>
                     <Td className="text-center">{s.shift2 || '—'}</Td>
                     <Td className="text-center">{s.fixed || '—'}</Td>
                     <Td className="text-center">{s.off}</Td>
@@ -574,7 +601,7 @@ export default function RosterOtomatis() {
                 value={editing.fixedShiftId ?? ''}
                 onChange={(e) => setEditing({ ...editing, fixedShiftId: e.target.value ? Number(e.target.value) : null })}
               >
-                <option value="">Digilir Shift 1 / Shift 2 (bergantian)</option>
+                <option value="">{data.siangId ? 'Digilir Shift 1 / Shift Siang / Shift 2 (bergantian)' : 'Digilir Shift 1 / Shift 2 (bergantian)'}</option>
                 {data.shifts.map((s) => (
                   <option key={s.id} value={s.id}>
                     Selalu {s.name} ({s.startTime}–{s.endTime})
@@ -593,6 +620,18 @@ export default function RosterOtomatis() {
                 <Field label="Tidak bisa Shift 2 (sore–malam) pada hari" hint="Contoh: kuliah malam Senin, Selasa, Rabu, Jumat">
                   <DayToggles value={editing.noShift2Days} onChange={(v) => setEditing({ ...editing, noShift2Days: v })} tone="bg-violet-600 text-white ring-violet-600" />
                 </Field>
+                <label className="flex items-start gap-2 text-sm">
+                  <input type="checkbox" className="mt-0.5" checked={editing.female} onChange={(e) => setEditing({ ...editing, female: e.target.checked })} />
+                  <span>
+                    Petugas perempuan
+                    <span className="block text-xs text-slate-500">Tidak pernah Shift Siang dan hanya ditempatkan di pos pintu (tidak di area parkiran).</span>
+                  </span>
+                </label>
+                {data.siangId && !editing.female && (
+                  <Field label="Tidak bisa Shift Siang (14.00–22.00) pada hari" hint="Contoh: kuliah malam Senin, Selasa, Rabu, Jumat">
+                    <DayToggles value={editing.noSiangDays} onChange={(v) => setEditing({ ...editing, noSiangDays: v })} tone="bg-teal-600 text-white ring-teal-600" />
+                  </Field>
+                )}
               </>
             )}
             <div className="flex justify-end gap-2 pt-2">

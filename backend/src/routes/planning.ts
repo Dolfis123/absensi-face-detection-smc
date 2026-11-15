@@ -3,7 +3,7 @@ import { Op } from 'sequelize';
 import { z } from 'zod';
 import { currentUser, requireRole } from '../middleware/auth';
 import { ATTENDEE_ROLES, EmployeeSchedule, Holiday, RosterRule, SLOT_TYPES, Shift, ShiftBreak, ShiftChangeLog, User, sequelize } from '../models';
-import { assignPlacements, DEFAULT_POSTS, getPosts, loadHistory, plottedUserFilter, rebalancePlacements, savePosts } from '../services/placement';
+import { assignPlacements, DEFAULT_POSTS, getPosts, groupsOf, loadHistory, placementRules, rebalancePlacements, savePosts } from '../services/placement';
 import { buildWhatsappText, loadRosterData, sendRosterPdf, sendRosterXlsx } from '../services/rosterExport';
 import { GenEmployee, generateBestRoster } from '../services/rosterGenerator';
 import { RosterInfeasible, SolverUnavailable, solveRoster } from '../services/rosterSolver';
@@ -217,12 +217,12 @@ async function rotationShifts() {
   const s1 = byCode.get('SHIFT_1');
   const s2 = byCode.get('SHIFT_2');
   if (!s1 || !s2) throw new HttpError(500, 'Shift 1 / Shift 2 tidak ditemukan');
-  return { shifts, s1, s2, full: byCode.get('SHIFT_PENUH') ?? null };
+  return { shifts, s1, s2, full: byCode.get('SHIFT_PENUH') ?? null, siang: byCode.get('SHIFT_SIANG') ?? null };
 }
 
 /** Aturan tiap karyawan; yang belum pernah diatur memakai bawaan (Koordinator → Shift Penuh). */
 async function loadRules() {
-  const [{ shifts, s1, s2, full }, users, rules] = await Promise.all([
+  const [{ shifts, s1, s2, full, siang }, users, rules] = await Promise.all([
     rotationShifts(),
     User.findAll({ where: { role: [...ATTENDEE_ROLES], isActive: true }, order: [['fullName', 'ASC']] }),
     RosterRule.findAll(),
@@ -240,22 +240,25 @@ async function loadRules() {
       offDays: r ? asDays(r.offDays) : ALL_DAYS,
       noShift1Days: r ? asDays(r.noShift1Days) : [],
       noShift2Days: r ? asDays(r.noShift2Days) : [],
+      noSiangDays: r ? asDays(r.noSiangDays) : [],
+      female: r ? !!r.female : false,
       active: r ? r.active : true,
     };
   });
-  return { rows, shifts, s1, s2 };
+  return { rows, shifts, s1, s2, siang };
 }
 
 router.get(
   '/roster/rules',
   adminOnly,
   ah(async (_req, res) => {
-    const { rows, shifts, s1, s2 } = await loadRules();
+    const { rows, shifts, s1, s2, siang } = await loadRules();
     res.json({
       rules: rows,
       shifts: shifts.map((s) => ({ id: s.id, code: s.code, name: s.name, startTime: s.startTime, endTime: s.endTime })),
       shift1Id: s1.id,
       shift2Id: s2.id,
+      siangId: siang?.id ?? null,
     });
   }),
 );
@@ -270,6 +273,8 @@ router.put(
         offDays: dayList,
         noShift1Days: dayList,
         noShift2Days: dayList,
+        noSiangDays: dayList.default([]),
+        female: z.boolean().default(false),
         active: z.boolean(),
       })
       .parse(req.body);
@@ -278,10 +283,12 @@ router.put(
     if (!user || !(ATTENDEE_ROLES as readonly string[]).includes(user.role)) throw new HttpError(404, 'Karyawan tidak ditemukan');
     if (body.fixedShiftId !== null && !(await Shift.findByPk(body.fixedShiftId))) throw new HttpError(400, 'Shift tidak ditemukan');
     if (body.offDays.length === 0) throw new HttpError(400, 'Pilih minimal satu hari yang boleh Off');
-    if (body.fixedShiftId === null && body.noShift1Days.some((d) => body.noShift2Days.includes(d) && !body.offDays.includes(d))) {
-      throw new HttpError(400, 'Ada hari yang tidak boleh Shift 1 maupun Shift 2 — jadikan hari itu hari Off');
+    // Petugas perempuan tidak pernah Shift Siang
+    const noSiang = body.female ? ALL_DAYS : body.noSiangDays;
+    if (body.fixedShiftId === null && body.noShift1Days.some((d) => body.noShift2Days.includes(d) && noSiang.includes(d) && !body.offDays.includes(d))) {
+      throw new HttpError(400, 'Ada hari yang tidak boleh Shift 1, Shift 2, maupun Shift Siang — jadikan hari itu hari Off');
     }
-    await RosterRule.upsert({ userId, ...body });
+    await RosterRule.upsert({ userId, ...body, noSiangDays: noSiang });
     res.json({ saved: true });
   }),
 );
@@ -296,15 +303,18 @@ router.post(
         start: z.string().regex(DATE_RE),
         weeks: z.number().int().min(3).max(13),
         offPerWeek: z.number().int().min(1).max(2).default(1),
-        shift2Extra: z.number().int().min(0).max(5).default(1),
+        // Komposisi harian: Shift 1 & Shift Siang jumlahnya tetap, sisanya Shift 2
+        shift1Count: z.number().int().min(1).max(15).default(3),
+        siangCount: z.number().int().min(0).max(10).default(2),
         // SOLVER = OR-Tools (aturan pulang malam → masuk pagi wajib); LAMA = penyusun hari demi hari
         engine: z.enum(['SOLVER', 'LAMA']).default('SOLVER'),
       })
       .parse(req.body);
     if (body.start < witNow().date) throw new HttpError(400, 'Tanggal mulai tidak boleh sebelum hari ini');
     const end = addDays(body.start, body.weeks * 7 - 1);
-    const { rows, s1, s2 } = await loadRules();
+    const { rows, s1, s2, siang } = await loadRules();
     const active = rows.filter((r) => r.active);
+    if (body.siangCount > 0 && !siang) throw new HttpError(400, 'Shift Siang belum ada di Pengaturan Shift');
     if (active.length === 0) throw new HttpError(400, 'Belum ada karyawan yang ikut roster otomatis');
     const [holidays, prevRows, existing] = await Promise.all([
       Holiday.findAll({ where: { date: { [Op.between]: [body.start, end] } } }),
@@ -318,14 +328,17 @@ router.post(
       offDays: r.offDays,
       noShift1Days: r.noShift1Days,
       noShift2Days: r.noShift2Days,
+      noSiangDays: r.female ? ALL_DAYS : r.noSiangDays,
     }));
     const genOpt = {
       start: body.start,
       weeks: body.weeks,
       offPerWeek: body.offPerWeek,
-      shift2Extra: body.shift2Extra,
+      shift1Count: body.shift1Count,
+      siangCount: siang ? body.siangCount : 0,
       shift1Id: s1.id,
       shift2Id: s2.id,
+      siangId: siang?.id ?? null,
       holidays: new Set(holidays.map((h) => h.date)),
       prevDay: new Map(prevRows.map((s) => [s.userId, s.shiftId === null ? ('OFF' as const) : s.shiftId])),
     };
@@ -349,19 +362,20 @@ router.post(
       result = generateBestRoster(employees, genOpt);
     }
     // Pratinjau penempatan pos, dihitung dengan cara yang sama seperti saat roster disimpan
-    const [posts, plotted, start] = await Promise.all([getPosts(), plottedUserFilter(), loadHistory(body.start)]);
+    const [posts, { plotted, rules: placeRules }, start] = await Promise.all([getPosts(), placementRules(), loadHistory(body.start)]);
     const placement = assignPlacements(
       result.dates.map((date) => {
-        const groups = new Map<number, number[]>();
+        const entries: { userId: number; shiftId: number }[] = [];
         for (const r of active) {
           const c = result.cells.get(r.userId)!.get(date);
-          if (typeof c === 'number' && plotted(r.userId)) groups.set(c, [...(groups.get(c) ?? []), r.userId]);
+          if (typeof c === 'number' && plotted(r.userId)) entries.push({ userId: r.userId, shiftId: c });
         }
-        return { date, groups: [...groups.entries()].sort((a, b) => a[0] - b[0]).map(([, ids]) => ids) };
+        return { date, groups: groupsOf(entries) };
       }),
-      posts.map((p) => p.code),
+      posts,
       start.history,
       start.last,
+      placeRules,
     );
     if (result.violations.length > 0) {
       throw new HttpError(400, `Aturan karyawan tidak bisa dipenuhi semua: ${result.violations.slice(0, 5).join('; ')}`);
@@ -414,6 +428,7 @@ router.put(
                 .refine((c) => c !== 'CAD', 'Kode CAD dipakai untuk Cadangan'),
               area: z.string().trim().min(2, 'Nama area wajib diisi').max(60),
               name: z.string().trim().min(2, 'Nama pos wajib diisi').max(60),
+              lot: z.boolean().default(false),
             }),
           )
           .min(1, 'Minimal satu pos')

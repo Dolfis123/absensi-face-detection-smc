@@ -13,7 +13,7 @@ export class RosterInfeasible extends Error {
   }
 }
 
-type Code = 'S1' | 'S2' | 'FULL' | 'OFF' | null;
+type Code = 'S1' | 'S2' | 'SG' | 'FULL' | 'OFF' | null;
 interface SolveResponse {
   status: 'OPTIMAL' | 'FEASIBLE' | 'INFEASIBLE' | 'UNKNOWN';
   cells?: Record<string, Code[]>;
@@ -26,12 +26,13 @@ const weekday = (date: string) => new Date(`${date}T00:00:00Z`).getUTCDay();
 export async function solveRoster(employees: GenEmployee[], opt: Omit<GenOptions, 'seed'>): Promise<{ result: GenResult; status: string; wallTime: number }> {
   const dates = Array.from({ length: opt.weeks * 7 }, (_, i) => addDays(opt.start, i));
   const code = (c: number | 'OFF' | null | undefined): Code =>
-    c === 'OFF' ? 'OFF' : c === opt.shift1Id ? 'S1' : c === opt.shift2Id ? 'S2' : typeof c === 'number' ? 'FULL' : null;
+    c === 'OFF' ? 'OFF' : c === opt.shift1Id ? 'S1' : c === opt.shift2Id ? 'S2' : opt.siangId !== null && c === opt.siangId ? 'SG' : typeof c === 'number' ? 'FULL' : null;
   const payload = {
-    employees: employees.map((e) => ({ id: e.id, fixed: e.fixedShiftId !== null, offDays: e.offDays, noShift1Days: e.noShift1Days, noShift2Days: e.noShift2Days })),
+    employees: employees.map((e) => ({ id: e.id, fixed: e.fixedShiftId !== null, offDays: e.offDays, noShift1Days: e.noShift1Days, noShift2Days: e.noShift2Days, noSiangDays: e.noSiangDays })),
     dates: dates.map((date) => ({ date, weekday: weekday(date), holiday: opt.holidays.has(date) })),
     offPerWeek: opt.offPerWeek,
-    shift2Extra: opt.shift2Extra,
+    shift1Count: opt.shift1Count,
+    siangCount: opt.siangId !== null ? opt.siangCount : 0,
     prevDay: Object.fromEntries([...opt.prevDay].map(([id, c]) => [id, code(c)])),
     timeLimit: 15,
   };
@@ -59,6 +60,7 @@ export async function solveRoster(employees: GenEmployee[], opt: Omit<GenOptions
       if (c === 'OFF') row.set(dates[i], 'OFF');
       else if (c === 'S1') row.set(dates[i], opt.shift1Id);
       else if (c === 'S2') row.set(dates[i], opt.shift2Id);
+      else if (c === 'SG' && opt.siangId !== null) row.set(dates[i], opt.siangId);
       else if (c === 'FULL' && e.fixedShiftId !== null) row.set(dates[i], e.fixedShiftId);
     });
     rows.set(e.id, row);

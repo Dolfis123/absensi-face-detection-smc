@@ -30,6 +30,19 @@ const SHIFTS = [
     break: { enabled: false, windowStart: '18:00', windowEnd: '20:00', maxMinutes: 30, toleranceMinutes: 15 },
   },
   {
+    // Shift Siang: 2 petugas pria dari jatah pagi digeser ke siang untuk membantu Shift 2 di jam ramai.
+    // Dibuat otomatis juga di database yang sudah berjalan (findOrCreate); jamnya bisa diubah di Pengaturan Shift.
+    code: 'SHIFT_SIANG',
+    name: 'Shift Siang',
+    startTime: '14:00',
+    endTime: '22:00',
+    slots: [
+      { type: 'MASUK', windowStart: '13:30', windowEnd: '14:00', sortOrder: 1 },
+      { type: 'PULANG', windowStart: '22:00', windowEnd: '22:30', sortOrder: 2 },
+    ],
+    break: { enabled: false, windowStart: '17:00', windowEnd: '19:00', maxMinutes: 30, toleranceMinutes: 15 },
+  },
+  {
     // Masuk pagi, pulang malam (mis. Koordinator Lapangan atau karyawan dobel shift).
     // Dibuat otomatis juga di database yang sudah berjalan (findOrCreate); jamnya bisa diubah di Pengaturan Shift.
     code: 'SHIFT_PENUH',
