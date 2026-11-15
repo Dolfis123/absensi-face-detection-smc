@@ -23,6 +23,9 @@ export interface Post {
 export const RESERVE: Post = { code: 'CAD', area: 'Cadangan', name: 'Cadangan (bantu pos ramai & gantikan saat istirahat)' };
 
 const POSTS_KEY = 'rosterPosts';
+const COORD_POST_KEY = 'rosterCoordinatorPost';
+/** Bawaan: Pintu Masuk Kasuari (KM) dijaga Koordinator di pagi hari */
+export const DEFAULT_COORDINATOR_POST = 'KM';
 export const DEFAULT_POSTS: Post[] = [
   { code: 'CK', area: 'Lobi Cendrawasih', name: 'Pintu Keluar' },
   { code: 'CM', area: 'Lobi Cendrawasih', name: 'Pintu Masuk' },
@@ -43,6 +46,22 @@ export async function getPosts(): Promise<Post[]> {
   } catch {
     return DEFAULT_POSTS;
   }
+}
+
+/**
+ * Pos pintu yang dijaga Koordinator selama Shift 1 (pagi). Petugas Shift 1 tidak ditempatkan di pos itu;
+ * Shift 2 tetap mengisinya. Hari Koordinator Off, pos itu kosong di pagi hari. null = tidak ada.
+ */
+export async function getCoordinatorPost(posts?: Post[]): Promise<string | null> {
+  const list = posts ?? (await getPosts());
+  const row = await AppSetting.findByPk(COORD_POST_KEY);
+  const code = row ? (row.value === '' ? null : row.value) : DEFAULT_COORDINATOR_POST;
+  // Hanya berlaku bila pos itu masih ada dan merupakan pos pintu (bukan area parkiran)
+  return code && list.some((p) => p.code === code && !p.lot) ? code : null;
+}
+
+export async function saveCoordinatorPost(code: string | null) {
+  await AppSetting.upsert({ key: COORD_POST_KEY, value: code ?? '' });
 }
 
 export async function savePosts(posts: Post[], actorId: number) {
@@ -67,6 +86,8 @@ export interface GroupRules {
   female: Set<number>;
   /** Kelompok Shift Siang: ke area parkiran */
   lotOnly?: boolean;
+  /** Pos pintu yang tidak diisi kelompok ini (mis. dijaga Koordinator di pagi hari) */
+  skip?: string | null;
 }
 
 /**
@@ -76,7 +97,7 @@ export interface GroupRules {
  */
 export function assignGroup(people: number[], posts: Post[], history: History, last: Map<number, string | null>, rules: GroupRules = { female: new Set() }): Map<number, string> {
   const n = people.length;
-  const gates = posts.filter((p) => !p.lot).map((p) => p.code);
+  const gates = posts.filter((p) => !p.lot && p.code !== rules.skip).map((p) => p.code);
   const lots = posts.filter((p) => p.lot).map((p) => p.code);
   const extra = (k: number) => (lots.length ? lots[k % lots.length] : RESERVE.code);
   const slots =
@@ -130,6 +151,9 @@ export interface PlacementDay {
 export interface PlacementRules {
   female: Set<number>;
   siangId: number | null;
+  /** Shift pagi tempat Koordinator menjaga pos `coordinatorPost` */
+  shift1Id?: number | null;
+  coordinatorPost?: string | null;
 }
 
 /** Membagi pos untuk beberapa hari berurutan; riwayat ikut diperbarui hari demi hari. */
@@ -141,7 +165,8 @@ export function assignPlacements(days: PlacementDay[], posts: Post[], history: H
     for (const group of day.groups) {
       const people = [...group.ids].sort((a, b) => a - b);
       const lotOnly = rules.siangId !== null && group.shiftId === rules.siangId;
-      for (const [p, code] of assignGroup(people, posts, history, last, { female: rules.female, lotOnly })) {
+      const skip = rules.shift1Id != null && group.shiftId === rules.shift1Id ? (rules.coordinatorPost ?? null) : null;
+      for (const [p, code] of assignGroup(people, posts, history, last, { female: rules.female, lotOnly, skip })) {
         result.set(`${p}|${day.date}`, code);
         const h = history.get(p) ?? new Map<string, number>();
         h.set(code, (h.get(code) ?? 0) + 1);
@@ -178,15 +203,19 @@ export async function loadHistory(from: string) {
 
 /** Siapa saja yang tidak diplot (koordinator), siapa petugas perempuan, dan id Shift Siang. */
 export async function placementRules() {
-  const [coordinators, women, siang] = await Promise.all([
+  const [coordinators, women, siang, shift1, coordinatorPost] = await Promise.all([
     User.findAll({ where: { role: 'KOORDINATOR' }, attributes: ['id'] }),
     RosterRule.findAll({ where: { female: true }, attributes: ['userId'] }),
     Shift.findOne({ where: { code: 'SHIFT_SIANG' } }),
+    Shift.findOne({ where: { code: 'SHIFT_1' } }),
+    getCoordinatorPost(),
   ]);
   const skip = new Set(coordinators.map((u) => u.id));
   return {
     plotted: (userId: number) => !skip.has(userId),
-    rules: { female: new Set(women.map((r) => r.userId)), siangId: siang?.id ?? null } as PlacementRules,
+    /** Pos Koordinator pada hari ia bekerja (dicatat di roster supaya tampil di PDF & teks WhatsApp) */
+    coordinatorPostOf: (shiftId: number | null) => (shiftId !== null ? coordinatorPost : null),
+    rules: { female: new Set(women.map((r) => r.userId)), siangId: siang?.id ?? null, shift1Id: shift1?.id ?? null, coordinatorPost } as PlacementRules,
   };
 }
 
@@ -199,7 +228,7 @@ export function groupsOf(entries: { userId: number; shiftId: number }[]) {
 
 /** Hitung ulang penempatan untuk roster tersimpan pada rentang tanggal (dipanggil setiap roster berubah). */
 export async function rebalancePlacements(from: string, to: string) {
-  const [posts, { plotted, rules }, schedules, start] = await Promise.all([
+  const [posts, { plotted, rules, coordinatorPostOf }, schedules, start] = await Promise.all([
     getPosts(),
     placementRules(),
     EmployeeSchedule.findAll({ where: { date: { [Op.between]: [from, to] } } }),
@@ -214,7 +243,7 @@ export async function rebalancePlacements(from: string, to: string) {
   const result = assignPlacements(days, posts, start.history, start.last, rules);
   await sequelize.transaction(async (transaction) => {
     for (const s of schedules) {
-      const post = result.get(`${s.userId}|${s.date}`) ?? null;
+      const post = plotted(s.userId) ? (result.get(`${s.userId}|${s.date}`) ?? null) : coordinatorPostOf(s.shiftId);
       if (s.post !== post) await s.update({ post }, { transaction });
     }
   });

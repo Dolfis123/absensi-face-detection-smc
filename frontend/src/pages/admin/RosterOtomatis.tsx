@@ -100,18 +100,23 @@ function DayToggles({ value, onChange, tone }: { value: number[]; onChange: (v: 
 /** Daftar pos penempatan (plotting). Urutan = prioritas: bila petugas kurang, pos paling bawah yang dikosongkan. */
 function PostsEditor({ onSaved }: { onSaved: () => void }) {
   const { toast } = useFeedback();
-  const { data, reload } = useLoad(() => api.get<{ posts: Post[]; defaults: Post[] }>('/admin/roster/posts'));
+  const { data, reload } = useLoad(() => api.get<{ posts: Post[]; defaults: Post[]; coordinatorPost: string | null }>('/admin/roster/posts'));
   const [draft, setDraft] = useState<Post[] | null>(null);
+  const [coordDraft, setCoordDraft] = useState<string | null | undefined>(undefined);
   const [saving, setSaving] = useState(false);
   const list = draft ?? data?.posts ?? [];
+  const coordPost = coordDraft !== undefined ? coordDraft : (data?.coordinatorPost ?? null);
+  const gates = list.filter((p) => !p.lot && p.code);
+  const dirty = !!draft || coordDraft !== undefined;
   const set = (i: number, patch: Partial<Post>) => setDraft(list.map((p, j) => (j === i ? { ...p, ...patch } : p)));
 
   async function save() {
     setSaving(true);
     try {
-      await api.put('/admin/roster/posts', { posts: list });
+      await api.put('/admin/roster/posts', { posts: list, coordinatorPost: coordPost && gates.some((g) => g.code === coordPost) ? coordPost : null });
       toast('Pos penempatan disimpan. Roster ke depan sudah dibagi ulang.');
       setDraft(null);
+      setCoordDraft(undefined);
       reload();
       onSaved();
     } catch (e) {
@@ -143,6 +148,21 @@ function PostsEditor({ onSaved }: { onSaved: () => void }) {
           </div>
         ))}
       </div>
+      <div className="mt-4 rounded-xl bg-slate-50 p-3">
+        <Field
+          label="Pos yang dijaga Koordinator di pagi hari (Shift 1)"
+          hint="Petugas Shift 1 tidak ditempatkan di pos ini; Koordinator menjaganya sampai Shift 2 masuk (boleh ditukar dengan petugas Shift Siang). Saat Koordinator Off, pos ini kosong di pagi hari. Shift 2 tetap mengisinya."
+        >
+          <Select value={coordPost ?? ''} onChange={(e) => setCoordDraft(e.target.value || null)}>
+            <option value="">Tidak ada — Koordinator tidak menjaga pos</option>
+            {gates.map((p) => (
+              <option key={p.code} value={p.code}>
+                {p.code} — {p.area} {p.name}
+              </option>
+            ))}
+          </Select>
+        </Field>
+      </div>
       <div className="mt-3 flex flex-wrap justify-between gap-2">
         <div className="flex gap-2">
           <Button variant="secondary" icon="plus" onClick={() => setDraft([...list, { code: '', area: list.at(-1)?.area ?? '', name: '' }])} disabled={list.length >= 10}>
@@ -154,7 +174,7 @@ function PostsEditor({ onSaved }: { onSaved: () => void }) {
             </Button>
           )}
         </div>
-        <Button onClick={save} loading={saving} disabled={!draft}>
+        <Button onClick={save} loading={saving} disabled={!dirty}>
           Simpan Pos
         </Button>
       </div>

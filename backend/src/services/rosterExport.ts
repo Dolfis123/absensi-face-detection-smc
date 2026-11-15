@@ -568,6 +568,12 @@ export async function buildWhatsappText(date: string): Promise<string> {
     // Satu pos bisa berisi beberapa orang (mis. area parkiran / lot)
     const byPost = new Map<string, string[]>();
     for (const m of members.filter((x) => x.post)) byPost.set(m.post!, [...(byPost.get(m.post!) ?? []), name.get(m.userId)!]);
+    // Pagi hari Koordinator menjaga pos pintu tertentu (mis. KM) sampai Shift 2 masuk
+    if (sh.code === 'SHIFT_1') {
+      for (const c of working.filter((x) => coordinators.has(x.userId) && x.post)) {
+        byPost.set(c.post!, [...(byPost.get(c.post!) ?? []), `${name.get(c.userId)} (Koordinator, sampai Shift 2 masuk)`]);
+      }
+    }
     if (byPost.size) {
       out.push('', '📍 *PENEMPATAN (PLOTTING):*');
       for (const area of [...new Set(posts.map((p) => p.area))]) {

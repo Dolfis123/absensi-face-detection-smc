@@ -3,7 +3,7 @@ import { Op } from 'sequelize';
 import { z } from 'zod';
 import { currentUser, requireRole } from '../middleware/auth';
 import { ATTENDEE_ROLES, EmployeeSchedule, Holiday, RosterRule, SLOT_TYPES, Shift, ShiftBreak, ShiftChangeLog, User, sequelize } from '../models';
-import { assignPlacements, DEFAULT_POSTS, getPosts, groupsOf, loadHistory, placementRules, rebalancePlacements, savePosts } from '../services/placement';
+import { assignPlacements, DEFAULT_POSTS, getCoordinatorPost, getPosts, groupsOf, loadHistory, placementRules, rebalancePlacements, saveCoordinatorPost, savePosts } from '../services/placement';
 import { buildWhatsappText, loadRosterData, sendRosterPdf, sendRosterXlsx } from '../services/rosterExport';
 import { GenEmployee, generateBestRoster } from '../services/rosterGenerator';
 import { RosterInfeasible, SolverUnavailable, solveRoster } from '../services/rosterSolver';
@@ -362,7 +362,7 @@ router.post(
       result = generateBestRoster(employees, genOpt);
     }
     // Pratinjau penempatan pos, dihitung dengan cara yang sama seperti saat roster disimpan
-    const [posts, { plotted, rules: placeRules }, start] = await Promise.all([getPosts(), placementRules(), loadHistory(body.start)]);
+    const [posts, { plotted, rules: placeRules, coordinatorPostOf }, start] = await Promise.all([getPosts(), placementRules(), loadHistory(body.start)]);
     const placement = assignPlacements(
       result.dates.map((date) => {
         const entries: { userId: number; shiftId: number }[] = [];
@@ -390,7 +390,10 @@ router.post(
         fullName: r.fullName,
         role: r.role,
         cells: result.dates.map((d) => result.cells.get(r.userId)!.get(d) ?? null),
-        posts: result.dates.map((d) => placement.get(`${r.userId}|${d}`) ?? null),
+        posts: result.dates.map((d) => {
+          const c = result.cells.get(r.userId)!.get(d);
+          return plotted(r.userId) ? (placement.get(`${r.userId}|${d}`) ?? null) : coordinatorPostOf(typeof c === 'number' ? c : null);
+        }),
       })),
       posts,
       stats: result.stats,
@@ -407,7 +410,8 @@ router.get(
   '/roster/posts',
   adminOnly,
   ah(async (_req, res) => {
-    res.json({ posts: await getPosts(), defaults: DEFAULT_POSTS });
+    const posts = await getPosts();
+    res.json({ posts, defaults: DEFAULT_POSTS, coordinatorPost: await getCoordinatorPost(posts) });
   }),
 );
 
@@ -415,8 +419,10 @@ router.put(
   '/roster/posts',
   adminOnly,
   ah(async (req, res) => {
-    const { posts } = z
+    const { posts, coordinatorPost } = z
       .object({
+        // Pos pintu yang dijaga Koordinator di pagi hari (Shift 1); null = tidak ada
+        coordinatorPost: z.string().trim().toUpperCase().nullable().default(null),
         posts: z
           .array(
             z.object({
@@ -436,11 +442,15 @@ router.put(
       })
       .parse(req.body);
     if (new Set(posts.map((p) => p.code)).size !== posts.length) throw new HttpError(400, 'Kode pos tidak boleh kembar');
+    if (coordinatorPost && !posts.some((p) => p.code === coordinatorPost && !p.lot)) {
+      throw new HttpError(400, 'Pos Koordinator harus salah satu pos pintu (bukan area parkiran)');
+    }
     await savePosts(posts, currentUser(req).id);
+    await saveCoordinatorPost(coordinatorPost);
     // Roster ke depan langsung memakai daftar pos yang baru
     const today = witNow().date;
     await rebalancePlacements(today, addDays(today, 120));
-    res.json({ posts });
+    res.json({ posts, coordinatorPost });
   }),
 );
 
