@@ -183,6 +183,18 @@ const MIGRATIONS: { id: string; up: () => Promise<void> }[] = [
         await RosterRule.create({ userId: users[0].id, fixedShiftId: null, offDays: [5], noShift1Days: [], noShift2Days: [1, 2, 3, 5], noSiangDays: [1, 2, 3, 5], female: false, active: true });
     },
   },
+  {
+    id: '2026-11-16-apriando-sabtu-minggu-shift2',
+    async up() {
+      // Apriando: Sabtu & Minggu wajib Shift 2 (tidak Shift 1, tidak Shift Siang); Sen/Sel/Rab Shift 1; Jumat Off; Kamis bebas
+      const users = await User.findAll({ where: { fullName: { [Op.like]: 'Apriando%' }, role: ['KARYAWAN', 'KOORDINATOR'] } });
+      if (users.length !== 1) return; // nama tidak ditemukan / ganda → diatur manual di Aturan Karyawan
+      const rule = { offDays: [5], noShift1Days: [0, 6], noShift2Days: [1, 2, 3, 5], noSiangDays: [0, 1, 2, 3, 5, 6] };
+      const existing = await RosterRule.findByPk(users[0].id);
+      if (existing) await existing.update(rule);
+      else await RosterRule.create({ userId: users[0].id, fixedShiftId: null, female: false, active: true, ...rule });
+    },
+  },
 ];
 
 export async function runMigrations() {
