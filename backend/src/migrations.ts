@@ -195,6 +195,20 @@ const MIGRATIONS: { id: string; up: () => Promise<void> }[] = [
       else await RosterRule.create({ userId: users[0].id, fixedShiftId: null, female: false, active: true, ...rule });
     },
   },
+  {
+    id: '2026-11-16-putri-tidak-off-minggu',
+    async up() {
+      // Putri: hari Minggu selalu masuk Shift 1 — tidak boleh Off di hari Minggu
+      const users = await User.findAll({ where: { fullName: { [Op.like]: 'Putri%' }, role: ['KARYAWAN', 'KOORDINATOR'] } });
+      if (users.length !== 1) return; // nama tidak ditemukan / ganda → diatur manual di Aturan Karyawan
+      const ALL = [0, 1, 2, 3, 4, 5, 6];
+      const existing = await RosterRule.findByPk(users[0].id);
+      const days = (v: unknown) => (typeof v === 'string' ? (JSON.parse(v) as number[]) : ((v as number[]) ?? ALL));
+      const offDays = (existing ? days(existing.offDays) : ALL).filter((d) => d !== 0);
+      if (existing) await existing.update({ offDays });
+      else await RosterRule.create({ userId: users[0].id, fixedShiftId: null, offDays, noShift1Days: [], noShift2Days: [0], noSiangDays: ALL, female: true, active: true });
+    },
+  },
 ];
 
 export async function runMigrations() {

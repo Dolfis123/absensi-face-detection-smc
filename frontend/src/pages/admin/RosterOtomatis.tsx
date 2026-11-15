@@ -72,6 +72,10 @@ const RECOMMENDED_WEEKS = 7;
 const WEEK = [1, 2, 3, 4, 5, 6, 0];
 const DAY_SHORT = ['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab'];
 const daysText = (xs: number[]) => (xs.length === 7 ? 'Semua hari' : xs.length === 0 ? '—' : WEEK.filter((d) => xs.includes(d)).map((d) => DAY_SHORT[d]).join(', '));
+/** Hari yang TIDAK boleh Off (kebalikan dari "boleh Off") — lebih mudah dibaca bila hanya 1–3 hari */
+const noOffDays = (offDays: number[]) => WEEK.filter((d) => !offDays.includes(d));
+const offText = (offDays: number[]) =>
+  offDays.length === 7 ? 'Semua hari' : offDays.length >= 4 ? `Semua hari, kecuali ${daysText(noOffDays(offDays))}` : `Hanya ${daysText(offDays)}`;
 
 function DayToggles({ value, onChange, tone }: { value: number[]; onChange: (v: number[]) => void; tone: string }) {
   return (
@@ -297,7 +301,10 @@ export default function RosterOtomatis() {
                     {!r.saved && <Badge className="mt-1 bg-amber-100 text-amber-800">Aturan bawaan (belum diatur)</Badge>}
                   </Td>
                   <Td className="text-sm">{shiftName(r.fixedShiftId)}</Td>
-                  <Td className="text-sm">{daysText(r.offDays)}</Td>
+                  <Td className="text-sm">
+                    {offText(r.offDays)}
+                    {r.offDays.length >= 4 && r.offDays.length < 7 && <div className="text-xs font-medium text-rose-700">Tidak boleh Off: {daysText(noOffDays(r.offDays))}</div>}
+                  </Td>
                   <Td className="text-xs">
                     {r.female && <div className="font-medium text-pink-700">Perempuan: pos pintu saja, tanpa Shift Siang</div>}
                     {r.noShift1Days.length > 0 && <div className="text-sky-700">Tidak Shift 1: {daysText(r.noShift1Days)}</div>}
@@ -432,7 +439,7 @@ export default function RosterOtomatis() {
                         <b>{r.fullName}</b>:{' '}
                         {[
                           r.fixedShiftId !== null && `selalu ${shiftName(r.fixedShiftId)}`,
-                          r.offDays.length < 7 && `Off hanya ${daysText(r.offDays)}`,
+                          r.offDays.length < 7 && (r.offDays.length >= 4 ? `tidak boleh Off ${daysText(noOffDays(r.offDays))}` : `Off hanya ${daysText(r.offDays)}`),
                           r.noShift1Days.length > 0 && `${daysText(r.noShift1Days)} tidak Shift 1`,
                           r.noShift2Days.length > 0 && `${daysText(r.noShift2Days)} tidak Shift 2`,
                           r.female && 'perempuan: tidak Shift Siang, tidak di area parkiran',
@@ -609,7 +616,12 @@ export default function RosterOtomatis() {
                 ))}
               </Select>
             </Field>
-            <Field label="Hari yang boleh jadi hari Off" hint="Pilih satu hari saja jika Off-nya selalu tetap (mis. Koordinator: Senin)">
+            <Field
+              label="Hari yang boleh jadi hari Off"
+              hint={`Menyala = boleh Off. Matikan hari yang TIDAK boleh Off (mis. Putri: Minggu). Nyalakan satu hari saja bila Off-nya selalu tetap (mis. Koordinator: Senin).${
+                editing.offDays.length > 0 && editing.offDays.length < 7 ? ` Sekarang: ${offText(editing.offDays)}.` : ''
+              }`}
+            >
               <DayToggles value={editing.offDays} onChange={(v) => setEditing({ ...editing, offDays: v })} tone="bg-slate-600 text-white ring-slate-600" />
             </Field>
             {editing.fixedShiftId === null && (
