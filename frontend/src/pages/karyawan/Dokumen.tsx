@@ -26,7 +26,17 @@ interface DocSlip {
   openedAt: string | null;
   receivedAt: string | null;
 }
+interface DocContract {
+  id: number;
+  number: string;
+  startDate: string;
+  endDate: string;
+  duration: string;
+  openedAt: string | null;
+  receivedAt: string | null;
+}
 export interface MyDocuments {
+  contracts: DocContract[];
   letters: DocLetter[];
   slips: DocSlip[];
   unread: number;
@@ -42,13 +52,33 @@ export default function Dokumen() {
   if (!data) return <Alert>{error}</Alert>;
   return (
     <>
-      <PageHeader title="Surat & Slip Saya" subtitle="Buka dokumen, baca, lalu tekan “Saya sudah menerima”. Waktu konfirmasi tercatat sebagai tanda terima." />
+      <PageHeader title="Kontrak, Surat & Slip" subtitle="Buka dokumen, baca, lalu tekan “Saya sudah menerima”. Waktu konfirmasi tercatat sebagai tanda terima." />
       {data.unread > 0 && (
         <div className="mb-4">
           <Alert kind="info">
             Ada <b>{data.unread} dokumen</b> yang belum Anda konfirmasi. Buka dulu dokumennya, lalu tekan tombol konfirmasi.
           </Alert>
         </div>
+      )}
+      {data.contracts.length > 0 && (
+        <Card title="Kontrak Kerja (PKWT)" subtitle="Perjanjian kerja Anda dengan perusahaan" className="mb-4">
+          <div className="grid gap-3 lg:grid-cols-2">
+            {data.contracts.map((c) => (
+              <DocItem
+                key={c.id}
+                title={`PKWT ${c.duration}`}
+                sub={`${c.number ? `Nomor ${c.number} · ` : ''}berlaku ${fmtDate(c.startDate, false)} s.d. ${fmtDate(c.endDate, false)}`}
+                openedAt={c.openedAt}
+                receivedAt={c.receivedAt}
+                pdf={`/me/contracts/${c.id}/pdf`}
+                pdfName={`PKWT_${(c.number || String(c.id)).replace(/\//g, '-')}.pdf`}
+                receive={`/me/contracts/${c.id}/receive`}
+                confirmText="Saya sudah membaca dan menerima kontrak ini"
+                onDone={reload}
+              />
+            ))}
+          </div>
+        </Card>
       )}
       <div className="grid gap-4 lg:grid-cols-2">
         <Card title="Surat dari Perusahaan" subtitle="Surat peringatan / panggilan">

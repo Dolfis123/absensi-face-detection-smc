@@ -917,10 +917,10 @@ NotWorkingMark.belongsTo(User, { foreignKey: 'createdById', as: 'createdBy' });
 NotWorkingMark.belongsTo(User, { foreignKey: 'cancelledById', as: 'cancelledBy' });
 
 // ───────────────────────────── Tanda terima digital (surat & slip) ─────────────────────────────
-export const RECEIPT_KINDS = ['LETTER', 'SLIP'] as const;
+export const RECEIPT_KINDS = ['LETTER', 'SLIP', 'CONTRACT'] as const;
 export type ReceiptKind = (typeof RECEIPT_KINDS)[number];
 /**
- * Bukti petugas sudah membuka / menerima dokumen. LETTER: refId = id surat disiplin.
+ * Bukti petugas sudah membuka / menerima dokumen. LETTER: refId = id surat disiplin. CONTRACT: refId = id kontrak PKWT.
  * SLIP: refId = id terbitan slip bulanan, version = versi terbitan yang diterima.
  */
 export class DocumentReceipt extends Model<InferAttributes<DocumentReceipt>, InferCreationAttributes<DocumentReceipt>> {
@@ -1011,6 +1011,96 @@ SystemAlert.init(
     notifiedAt: { type: DataTypes.DATE, allowNull: true },
   },
   { sequelize, tableName: 'system_alerts', timestamps: false, indexes: [{ fields: ['key', 'active'] }, { fields: ['first_at'] }] },
+);
+
+// ───────────────────────────── Data pribadi karyawan & kontrak PKWT ─────────────────────────────
+/** Data pribadi untuk kontrak (terpisah dari tabel users supaya data akun & wajah tidak tersentuh). */
+export class EmployeeProfile extends Model<InferAttributes<EmployeeProfile>, InferCreationAttributes<EmployeeProfile>> {
+  declare userId: number;
+  declare ktpNumber: string | null;
+  declare birthPlace: string | null;
+  declare birthDate: string | null;
+  declare address: string | null;
+  declare bankName: string | null;
+  declare bankAccount: string | null;
+  declare updatedAt: CreationOptional<Date>;
+}
+EmployeeProfile.init(
+  {
+    userId: { type: DataTypes.INTEGER.UNSIGNED, primaryKey: true, references: { model: 'users', key: 'id' } },
+    ktpNumber: { type: DataTypes.STRING(20), allowNull: true },
+    birthPlace: { type: DataTypes.STRING(80), allowNull: true },
+    birthDate: { type: DataTypes.DATEONLY, allowNull: true },
+    address: { type: DataTypes.STRING(300), allowNull: true },
+    bankName: { type: DataTypes.STRING(60), allowNull: true },
+    bankAccount: { type: DataTypes.STRING(40), allowNull: true },
+    updatedAt: DataTypes.DATE,
+  },
+  { sequelize, tableName: 'employee_profiles', createdAt: false },
+);
+
+/** Pihak pertama saat kontrak dibuat — disalin supaya kontrak lama tidak berubah bila perusahaan berganti. */
+export interface ContractEmployer {
+  companyName: string;
+  companyAddress: string;
+  signerName: string;
+  signerTitle: string;
+  recordedPlace: string;
+}
+/** Kontrak PKWT; tidak dihapus, hanya dibatalkan dengan alasan. */
+export class EmploymentContract extends Model<InferAttributes<EmploymentContract>, InferCreationAttributes<EmploymentContract>> {
+  declare id: CreationOptional<number>;
+  declare userId: number;
+  declare year: number;
+  declare seq: number;
+  declare number: string;
+  declare position: 'PETUGAS' | 'KOORDINATOR';
+  declare signDate: string;
+  declare startDate: string;
+  declare endDate: string;
+  declare baseWage: number;
+  declare allowance: number | null;
+  declare employer: ContractEmployer;
+  declare workHoursText: string;
+  declare previousId: number | null;
+  declare createdById: number;
+  declare voidReason: CreationOptional<string | null>;
+  declare voidedById: CreationOptional<number | null>;
+  declare voidedAt: CreationOptional<Date | null>;
+  declare createdAt: CreationOptional<Date>;
+  declare updatedAt: CreationOptional<Date>;
+}
+EmploymentContract.init(
+  {
+    id: { type: DataTypes.INTEGER.UNSIGNED, autoIncrement: true, primaryKey: true },
+    userId: { type: DataTypes.INTEGER.UNSIGNED, allowNull: false, references: { model: 'users', key: 'id' } },
+    year: { type: DataTypes.SMALLINT.UNSIGNED, allowNull: false },
+    seq: { type: DataTypes.INTEGER.UNSIGNED, allowNull: false },
+    number: { type: DataTypes.STRING(80), allowNull: false },
+    position: { type: DataTypes.ENUM('PETUGAS', 'KOORDINATOR'), allowNull: false },
+    signDate: { type: DataTypes.DATEONLY, allowNull: false },
+    startDate: { type: DataTypes.DATEONLY, allowNull: false },
+    endDate: { type: DataTypes.DATEONLY, allowNull: false },
+    baseWage: { type: DataTypes.INTEGER.UNSIGNED, allowNull: false },
+    allowance: { type: DataTypes.INTEGER.UNSIGNED, allowNull: true },
+    employer: {
+      type: DataTypes.JSON,
+      allowNull: false,
+      get() {
+        const v = this.getDataValue('employer') as unknown;
+        return (typeof v === 'string' ? JSON.parse(v) : v) as ContractEmployer;
+      },
+    },
+    workHoursText: { type: DataTypes.STRING(500), allowNull: false },
+    previousId: { type: DataTypes.INTEGER.UNSIGNED, allowNull: true },
+    createdById: { type: DataTypes.INTEGER.UNSIGNED, allowNull: false, references: { model: 'users', key: 'id' } },
+    voidReason: { type: DataTypes.STRING(300), allowNull: true },
+    voidedById: { type: DataTypes.INTEGER.UNSIGNED, allowNull: true },
+    voidedAt: { type: DataTypes.DATE, allowNull: true },
+    createdAt: DataTypes.DATE,
+    updatedAt: DataTypes.DATE,
+  },
+  { sequelize, tableName: 'employment_contracts', indexes: [{ unique: true, fields: ['year', 'seq'] }, { fields: ['user_id'] }, { fields: ['end_date'] }] },
 );
 
 export { sequelize };

@@ -27,6 +27,19 @@ const MIGRATIONS: { id: string; up: () => Promise<void> }[] = [
     },
   },
   {
+    // Tanda terima digital untuk kontrak PKWT: tambah nilai enum CONTRACT (tabel lain tidak disentuh)
+    id: '2026-11-16-tanda-terima-kontrak',
+    async up() {
+      const rows = await sequelize.query<{ COLUMN_TYPE: string }>(
+        "SELECT COLUMN_TYPE FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'document_receipts' AND COLUMN_NAME = 'kind'",
+        { type: QueryTypes.SELECT },
+      );
+      if (rows[0] && !rows[0].COLUMN_TYPE.includes("'CONTRACT'")) {
+        await sequelize.query("ALTER TABLE `document_receipts` MODIFY `kind` ENUM('LETTER','SLIP','CONTRACT') NOT NULL");
+      }
+    },
+  },
+  {
     id: '2026-10-28-istirahat-bergantian',
     async up() {
       // 1) Tambah nilai enum KEMBALI (selesai istirahat). ALTER tidak memicu trigger.
