@@ -280,6 +280,25 @@ export default function Karyawan() {
     }
   }
 
+  async function toggleTest(u: PublicUser) {
+    const test = !u.testAccount;
+    const ok = await confirm({
+      title: test ? `Jadikan ${u.fullName} akun uji coba?` : `Kembalikan ${u.fullName} sebagai karyawan?`,
+      message: test
+        ? 'Akun tetap bisa login dan absen untuk mencoba sistem, tetapi TIDAK ikut laporan kehadiran, rekap upah, peringatan disiplin, monitoring, dan roster yang dibagikan.'
+        : 'Akun ini akan kembali ikut laporan kehadiran, rekap upah, disiplin, monitoring, dan roster.',
+      confirmLabel: test ? 'Ya, akun uji coba' : 'Ya, kembalikan',
+    });
+    if (!ok) return;
+    try {
+      await api.put(`/admin/users/${u.id}/test-account`, { test });
+      toast(test ? `${u.fullName} ditandai akun uji coba` : `${u.fullName} kembali ikut laporan`);
+      reload();
+    } catch (e) {
+      toast(errMsg(e), 'error');
+    }
+  }
+
   async function remove(u: PublicUser) {
     const ok = await confirm({
       title: `Hapus ${u.fullName}?`,
@@ -380,6 +399,11 @@ export default function Karyawan() {
                     <span className={`h-2 w-2 rounded-full ${u.isActive ? 'bg-emerald-500' : 'bg-slate-300'}`} />
                     {u.isActive ? 'Aktif' : 'Nonaktif'}
                   </span>
+                  {u.testAccount && (
+                    <span title="Tidak ikut laporan, rekap upah, disiplin, monitoring & roster">
+                      <Badge className="ml-1 bg-amber-100 text-amber-800">Akun uji coba</Badge>
+                    </span>
+                  )}
                 </Td>
                 <Td>
                   {u.immutable ? (
@@ -397,6 +421,11 @@ export default function Karyawan() {
                       {u.role !== 'SUPER_ADMIN' && (
                         <Button variant="ghost" onClick={() => open({ type: 'pin', user: u })}>
                           PIN
+                        </Button>
+                      )}
+                      {u.role !== 'SUPER_ADMIN' && (
+                        <Button variant="ghost" onClick={() => toggleTest(u)} title="Akun uji coba tidak ikut laporan">
+                          {u.testAccount ? 'Bukan uji' : 'Akun uji'}
                         </Button>
                       )}
                       <Button variant="ghost" className="text-rose-600" onClick={() => remove(u)}>

@@ -20,6 +20,8 @@ export interface PublicUser {
   faceOutdated: boolean;
   hasPin: boolean;
   immutable: boolean;
+  /** Akun uji coba: tidak ikut laporan, rekap upah, disiplin, monitoring & roster yang dibagikan */
+  testAccount?: boolean;
 }
 
 export interface Shift {

@@ -3,6 +3,7 @@ import { Router } from 'express';
 import { Transaction } from 'sequelize';
 import { z } from 'zod';
 import { currentUser, requireRole } from '../middleware/auth';
+import { getTestAccountIds, setTestAccount } from '../services/testAccounts';
 import {
   Attendance,
   AuditLog,
@@ -14,6 +15,7 @@ import {
   NotWorkingMark,
   SLOT_TYPES,
   Shift,
+  ShiftChangeLog,
   User,
   sequelize,
 } from '../models';
@@ -114,8 +116,21 @@ async function assertShift(id: number) {
 router.get(
   '/users',
   ah(async (_req, res) => {
-    const users = await User.findAll({ order: [['role', 'ASC'], ['fullName', 'ASC']] });
-    res.json(users.map((u) => u.toPublic()));
+    const [users, testIds] = await Promise.all([User.findAll({ order: [['role', 'ASC'], ['fullName', 'ASC']] }), getTestAccountIds()]);
+    res.json(users.map((u) => ({ ...u.toPublic(), testAccount: testIds.has(u.id) })));
+  }),
+);
+
+/** Tandai / lepas akun uji coba: tidak ikut laporan, rekap upah, disiplin, monitoring, dan roster yang dibagikan. */
+router.put(
+  '/users/:id/test-account',
+  ah(async (req, res) => {
+    const { test } = z.object({ test: z.boolean() }).parse(req.body);
+    const user = await User.findByPk(Number(req.params.id));
+    if (!user || user.role === 'SUPER_ADMIN') throw new HttpError(404, 'Pengguna tidak ditemukan');
+    await setTestAccount(user.id, test);
+    await ShiftChangeLog.create({ actorId: currentUser(req).id, target: `Akun uji coba: ${user.fullName}`, before: { test: !test }, after: { test } });
+    res.json({ testAccount: test });
   }),
 );
 

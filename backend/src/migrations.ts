@@ -45,6 +45,19 @@ const MIGRATIONS: { id: string; up: () => Promise<void> }[] = [
     },
   },
   {
+    // Akun uji coba (nama / username berawalan "test", mis. Testsatu & Testdua) otomatis ditandai
+    // supaya tidak ikut laporan. Hanya menulis app_settings; tabel users & data wajah tidak disentuh.
+    id: '2026-11-17-tandai-akun-uji-coba',
+    async up() {
+      if (await AppSetting.findByPk('testAccountIds')) return;
+      const rows = await sequelize.query<{ id: number }>(
+        "SELECT id FROM users WHERE role IN ('KARYAWAN','KOORDINATOR') AND (LOWER(full_name) LIKE 'test%' OR LOWER(username) LIKE 'test%')",
+        { type: QueryTypes.SELECT },
+      );
+      await AppSetting.create({ key: 'testAccountIds', value: JSON.stringify(rows.map((r) => r.id)) });
+    },
+  },
+  {
     id: '2026-10-28-istirahat-bergantian',
     async up() {
       // 1) Tambah nilai enum KEMBALI (selesai istirahat). ALTER tidak memicu trigger.

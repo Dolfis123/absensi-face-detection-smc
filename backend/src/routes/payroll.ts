@@ -7,6 +7,7 @@ import { computePayroll, getPayrollSettings, PayrollSettings, savePayrollSetting
 import { PayrollMeta, sendCertificatePdf, sendPayrollPdf } from '../services/payrollPdf';
 import { fmtMonth } from '../services/pdfReport';
 import { receiptsFor } from '../services/receipts';
+import { getTestAccountIds } from '../services/testAccounts';
 import { buildRecap } from '../services/recapService';
 import { loadShifts } from '../services/shiftService';
 import { ah, HttpError } from '../utils/http';
@@ -124,11 +125,13 @@ router.get(
 router.get(
   '/wages',
   ah(async (_req, res) => {
-    const [s, users, wages] = await Promise.all([
+    const [s, allUsers, wages, testIds] = await Promise.all([
       getPayrollSettings(),
       User.findAll({ where: { role: [...ATTENDEE_ROLES], isActive: true }, order: [['fullName', 'ASC']] }),
       EmployeeWage.findAll(),
+      getTestAccountIds(),
     ]);
+    const users = allUsers.filter((u) => !testIds.has(u.id));
     const wageOf = new Map(wages.map((w) => [w.userId, w.baseWage]));
     res.json(
       users.map((u) => ({

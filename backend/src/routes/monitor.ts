@@ -189,11 +189,11 @@ router.get(
   ah(async (req, res) => {
     const { from, to } = rangeQuery.parse(req.query);
     sendAttendancePdf(res, await buildRecap(from, to), {
-      title: 'Laporan Kehadiran Karyawan Parkir',
+      title: 'Rekap Kehadiran Karyawan Parkir',
       period: `${fmtLongDate(from)} – ${fmtLongDate(to)}`,
-      filename: `laporan-kehadiran_${from}_${to}.pdf`,
+      filename: `Rekap-Kehadiran-Parkir-SMC_${from}_${to}.pdf`,
       generatedBy: currentUser(req).fullName,
-      signature: false,
+      signature: true,
       org: await getOrgSettings(),
     });
   }),
@@ -206,7 +206,7 @@ router.get(
     const month = z.string().regex(MONTH_RE).parse(req.query.month);
     const { from, to } = monthRange(month);
     sendAttendancePdf(res, await buildRecap(from, to), {
-      title: 'Rekap Kehadiran Bulanan',
+      title: 'Rekap Kehadiran Karyawan Parkir',
       period: fmtMonth(month),
       filename: `rekap-bulanan_${month}.pdf`,
       generatedBy: currentUser(req).fullName,

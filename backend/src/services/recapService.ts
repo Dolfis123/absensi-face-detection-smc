@@ -14,6 +14,7 @@ import {
 import { eachDate, witNow } from '../utils/time';
 import { getBreakTrackingSince } from './settings';
 import { activeBreak, breakReturnDeadline, loadShifts, slotDeadline } from './shiftService';
+import { getTestAccountIds } from './testAccounts';
 import { activeMarks } from './notWorking';
 
 export type DayStatus =
@@ -131,11 +132,18 @@ const toMinutes = (hhmmss: string) => Number(hhmmss.slice(0, 2)) * 60 + Number(h
  * → tidak dijadwalkan → Masuk + Pulang lengkap (Tepat Waktu / Terlambat)
  * → absen tidak lengkap (Absen Sekali) → Alfa / Belum.
  */
+/**
+ * Rekap kehadiran. Tanpa `userIds` (laporan, monitoring, upah, disiplin): akun uji coba tidak diikutkan,
+ * dan akun nonaktif hanya diikutkan bila punya jadwal kerja / absen di periode itu (mis. keluar di tengah bulan).
+ */
 export async function buildRecap(from: string, to: string, userIds?: number[]): Promise<EmployeeRecap[]> {
-  const users = await User.findAll({
-    where: { role: [...ATTENDEE_ROLES], ...(userIds ? { id: userIds } : {}) },
-    order: [['fullName', 'ASC']],
-  });
+  const testIds = userIds ? new Set<number>() : await getTestAccountIds();
+  const users = (
+    await User.findAll({
+      where: { role: [...ATTENDEE_ROLES], ...(userIds ? { id: userIds } : {}) },
+      order: [['fullName', 'ASC']],
+    })
+  ).filter((u) => !testIds.has(u.id));
   const ids = users.map((u) => u.id);
   if (ids.length === 0) return [];
 
@@ -167,7 +175,7 @@ export async function buildRecap(from: string, to: string, userIds?: number[]): 
   const dates = eachDate(from, to);
   const trackingSince = getBreakTrackingSince();
 
-  return users.map((user) => {
+  const rows = users.map((user) => {
     const summary = emptySummary();
     const days: DayRecord[] = dates.map((date) => {
       const shiftId = scheduleMap.get(scheduleKey(user.id, date)) ?? null;
@@ -241,6 +249,10 @@ export async function buildRecap(from: string, to: string, userIds?: number[]): 
       user: { id: user.id, fullName: user.fullName, nik: user.nik, phone: user.phone, role: user.role },
       summary,
       days,
+      active: user.isActive,
     };
   });
+  return rows
+    .filter((r) => userIds || r.active || r.summary.hariKerja > 0 || r.days.some((d) => Object.keys(d.slots).length > 0))
+    .map(({ active: _a, ...r }) => r);
 }

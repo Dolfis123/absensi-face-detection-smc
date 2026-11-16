@@ -12,6 +12,7 @@ import { eachDate, witNow } from '../utils/time';
 import { fmtLongDate } from './pdfReport';
 import { getCoordinatorPost, getPosts, Post, RESERVE } from './placement';
 import { loadShifts, ShiftWithSlots, slotDeadline } from './shiftService';
+import { getTestAccountIds } from './testAccounts';
 
 const DAY_LONG = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
 const DAY_SHORT = ['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab'];
@@ -75,13 +76,14 @@ export async function loadRosterData(from: string, to: string): Promise<RosterDa
   ]);
   const shifts = [...shiftMap.values()];
   const shiftById = shiftMap;
+  const testIds = await getTestAccountIds();
   const coordinatorPost = await getCoordinatorPost(postList);
   const shift2 = shifts.find((s) => s.code === 'SHIFT_2');
   const handover = shift2 ? shift2.startTime.replace(':', '.') : null;
   const holidayMap = new Map(holidays.map((h) => [h.date, h.name]));
   const sched = new Map(schedules.map((s) => [`${s.userId}|${s.date}`, s]));
   // Koordinator di baris paling atas, lalu karyawan urut abjad
-  const sorted = [...users].sort((a, b) => Number(b.role === 'KOORDINATOR') - Number(a.role === 'KOORDINATOR') || a.fullName.localeCompare(b.fullName));
+  const sorted = users.filter((u) => !testIds.has(u.id)).sort((a, b) => Number(b.role === 'KOORDINATOR') - Number(a.role === 'KOORDINATOR') || a.fullName.localeCompare(b.fullName));
   const rows = sorted.map((u) => ({
     id: u.id,
     name: u.fullName,
@@ -602,6 +604,8 @@ export async function buildWhatsappText(date: string): Promise<string> {
   ]);
   const coordPostCode = await getCoordinatorPost(posts);
   const shifts = [...shiftMap.values()];
+  const testIds = await getTestAccountIds();
+  users.splice(0, users.length, ...users.filter((u) => !testIds.has(u.id))); // akun uji coba tidak ikut dibagikan
   const name = new Map(users.map((u) => [u.id, u.fullName]));
   const coordinators = users.filter((u) => u.role === 'KOORDINATOR');
   const isCoord = new Set(coordinators.map((u) => u.id));

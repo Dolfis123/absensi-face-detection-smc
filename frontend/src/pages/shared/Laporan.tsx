@@ -44,7 +44,7 @@ export default function Laporan() {
             <Button
               icon="fileText"
               loading={busy === 'detail-pdf'}
-              onClick={() => download(`/reports/detail.pdf?from=${range.from}&to=${range.to}`, `laporan-kehadiran_${range.from}_${range.to}.pdf`, 'detail-pdf')}
+              onClick={() => download(`/reports/detail.pdf?from=${range.from}&to=${range.to}`, `Rekap-Kehadiran-Parkir-SMC_${range.from}_${range.to}.pdf`, 'detail-pdf')}
             >
               Unduh PDF
             </Button>
@@ -69,7 +69,7 @@ export default function Laporan() {
               <Button
                 icon="fileText"
                 loading={busy === 'month-pdf'}
-                onClick={() => download(`/reports/monthly.pdf?month=${month}`, `rekap-bulanan_${month}.pdf`, 'month-pdf')}
+                onClick={() => download(`/reports/monthly.pdf?month=${month}`, `Rekap-Kehadiran-Parkir-SMC_${month}.pdf`, 'month-pdf')}
               >
                 Unduh PDF Resmi
               </Button>
