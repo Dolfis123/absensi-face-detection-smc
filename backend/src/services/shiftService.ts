@@ -109,6 +109,15 @@ export function resolveActiveSlot(
   // Koordinator Lapangan hanya absen Masuk & Pulang (tanpa istirahat)
   opts: { allowBreak: boolean } = { allowBreak: true },
 ): SlotResolution {
+  // Lewat batas terlambat tanpa Absen Masuk = ALFA. Tidak bisa lagi absen apa pun hari itu
+  // (Pulang / istirahat), supaya status tidak berubah menjadi "Absen Sekali".
+  const masuk = shift.slots.find((s) => s.type === 'MASUK');
+  if (masuk && !recorded.has('MASUK') && nowMinutes > slotDeadline(masuk)) {
+    return {
+      ok: false,
+      reason: `Anda tidak absen masuk sampai batas terlambat ${fmt(slotDeadline(masuk))} WIT, jadi hari ini tercatat ALFA. Absen pulang tidak bisa dilakukan dan status tetap Alfa.`,
+    };
+  }
   for (const slot of shift.slots) {
     const start = hhmmToMinutes(slot.windowStart);
     if (nowMinutes < start || nowMinutes > slotDeadline(slot)) continue;

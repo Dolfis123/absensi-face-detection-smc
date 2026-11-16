@@ -10,7 +10,8 @@ import { Op } from 'sequelize';
 import { ATTENDEE_ROLES, EmployeeSchedule, Holiday, Shift, User } from '../models';
 import { eachDate, witNow } from '../utils/time';
 import { fmtLongDate } from './pdfReport';
-import { getPosts, Post, RESERVE } from './placement';
+import { getCoordinatorPost, getPosts, Post, RESERVE } from './placement';
+import { loadShifts, ShiftWithSlots, slotDeadline } from './shiftService';
 
 const DAY_LONG = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
 const DAY_SHORT = ['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab'];
@@ -52,6 +53,11 @@ export interface RosterData {
   /** Pos penempatan yang dipakai di periode ini (urut sesuai pengaturan), termasuk Cadangan bila ada */
   posts: Post[];
   org: OrgSettings;
+  /** Pos pintu yang dijaga Koordinator di pagi hari (mis. KM) dan jam diserahkan ke Shift 2 */
+  coordinatorPost: string | null;
+  handover: string | null;
+  /** Aturan & cara membaca yang dicetak di setiap halaman */
+  notes: string[];
 }
 
 const kindOf = (s: Shift): Kind => (s.code === 'SHIFT_1' ? 'S1' : s.code === 'SHIFT_2' ? 'S2' : s.code === 'SHIFT_SIANG' ? 'SG' : s.code === 'SHIFT_PENUH' ? 'FULL' : 'OTHER');
@@ -59,15 +65,19 @@ const symbolOf = (s: Shift) => (s.code === 'SHIFT_PENUH' ? 'PENUH' : s.code === 
 
 export async function loadRosterData(from: string, to: string): Promise<RosterData> {
   const dates = eachDate(from, to);
-  const [shifts, users, schedules, holidays, postList, org] = await Promise.all([
-    Shift.findAll({ order: [['id', 'ASC']] }),
+  const [shiftMap, users, schedules, holidays, postList, org] = await Promise.all([
+    loadShifts(),
     User.findAll({ where: { role: [...ATTENDEE_ROLES], isActive: true } }),
     EmployeeSchedule.findAll({ where: { date: { [Op.between]: [from, to] } } }),
     Holiday.findAll({ where: { date: { [Op.between]: [from, to] } } }),
     getPosts(),
     getOrgSettings(),
   ]);
-  const shiftById = new Map(shifts.map((s) => [s.id, s]));
+  const shifts = [...shiftMap.values()];
+  const shiftById = shiftMap;
+  const coordinatorPost = await getCoordinatorPost(postList);
+  const shift2 = shifts.find((s) => s.code === 'SHIFT_2');
+  const handover = shift2 ? shift2.startTime.replace(':', '.') : null;
   const holidayMap = new Map(holidays.map((h) => [h.date, h.name]));
   const sched = new Map(schedules.map((s) => [`${s.userId}|${s.date}`, s]));
   // Koordinator di baris paling atas, lalu karyawan urut abjad
@@ -82,7 +92,10 @@ export async function loadRosterData(from: string, to: string): Promise<RosterDa
       if (!s) return { kind: 'EMPTY', text: '—' };
       if (s.shiftId === null) return { kind: 'OFF', text: 'OFF' };
       const shift = shiftById.get(s.shiftId);
-      return shift ? { kind: kindOf(shift), text: symbolOf(shift), post: s.post } : { kind: 'EMPTY', text: '—' };
+      if (!shift) return { kind: 'EMPTY', text: '—' };
+      // Koordinator: pos pagi hanya sampai Shift 2 masuk, mis. "KM s/d 16.00"
+      const post = u.role === 'KOORDINATOR' && s.post && handover ? `${s.post} s/d ${handover}` : s.post;
+      return { kind: kindOf(shift), text: symbolOf(shift), post };
     }),
   }));
   const used = new Set(rows.flatMap((r) => r.cells.map((c) => c.text)));
@@ -98,9 +111,10 @@ export async function loadRosterData(from: string, to: string): Promise<RosterDa
   ];
   if (used.has('LIBUR')) legend.push({ kind: 'HOLIDAY', symbol: 'LIBUR', meaning: 'Libur nasional / kantor' });
   if (used.has('—')) legend.push({ kind: 'EMPTY', symbol: '—', meaning: 'Belum dijadwalkan, tanya Koordinator' });
-  const usedPosts = new Set(rows.flatMap((r) => r.cells.map((c) => c.post).filter(Boolean)));
+  const usedPosts = new Set(rows.flatMap((r) => r.cells.map((c) => c.post?.split(' ')[0]).filter(Boolean)));
   const posts = [...postList.filter((p) => usedPosts.has(p.code)), ...(usedPosts.has(RESERVE.code) ? [RESERVE] : [])];
-  return { from, to, dates, holidays: holidayMap, shifts, rows, legend, posts, org };
+  const notes = rosterNotes(shifts, coordinatorPost, handover, rows.find((x) => x.coordinator)?.name ?? null);
+  return { from, to, dates, holidays: holidayMap, shifts, rows, legend, posts, org, coordinatorPost, handover, notes };
 }
 
 function counts(cells: RosterCell[]) {
@@ -123,11 +137,28 @@ function drawCell(kind: Kind, x: number, y: number, w: number, h: number) {
 }
 
 const periodText = (r: RosterData) => `${fmtLongDate(r.from)} – ${fmtLongDate(r.to)}`;
-const NOTES = [
-  'Absen Masuk dibuka 30 menit sebelum jam masuk. Absen di pos dengan wajah sendiri.',
-  'Jadwal terbaru selalu bisa dilihat di aplikasi, menu Jadwal Shift.',
-  'Tukar shift wajib seizin Koordinator agar roster di aplikasi ikut diubah.',
-];
+const hm = (min: number) => `${String(Math.floor(min / 60)).padStart(2, '0')}.${String(min % 60).padStart(2, '0')}`;
+/** Cara membaca + aturan yang wajib dipahami semua petugas (dicetak di setiap halaman PDF & di Excel). */
+function rosterNotes(shifts: ShiftWithSlots[], coordinatorPost: string | null, handover: string | null, coordinatorName: string | null) {
+  const jam = shifts
+    .filter((s) => s.code !== 'SHIFT_PENUH')
+    .map((s) => {
+      const m = s.slots.find((x) => x.type === 'MASUK');
+      return m ? `${symbolOf(s)} ${m.windowStart.replace(':', '.')}–${m.windowEnd.replace(':', '.')} (batas ${hm(slotDeadline(m))})` : null;
+    })
+    .filter(Boolean)
+    .join(' · ');
+  return [
+    'CARA MEMBACA: tiap kotak = shift hari itu, kode kecil di bawahnya = pos jaga (lihat daftar pos di atas). OFF = libur.',
+    `ABSEN MASUK (wajah sendiri, di pos): ${jam}. Lewat batas terlambat = ALFA; setelah itu absen pulang tidak bisa dan status tetap Alfa.`,
+    ...(coordinatorPost
+      ? [
+          `KOORDINATOR${coordinatorName ? ` (${coordinatorName})` : ''}: menjaga pos ${coordinatorPost} pagi hari sampai ${handover ?? 'Shift 2 masuk'}, lalu ${coordinatorPost} diambil alih petugas Shift 2 dan Koordinator mengawasi semua pos. Bila petugas Shift 2 di ${coordinatorPost} tidak masuk, Koordinator yang menunjuk penggantinya.`,
+        ]
+      : []),
+    'ARAHAN KOORDINATOR: Koordinator berhak melakukan rolling / tukar posisi sesuai situasi di lapangan. Semua petugas wajib mengikuti arahan Koordinator. Tukar shift atau izin wajib seizin Koordinator.',
+  ];
+}
 
 // ─────────────── PDF ───────────────
 const MARGIN = 30;
@@ -189,7 +220,7 @@ export function sendRosterPdf(res: Response, r: RosterData, generatedBy: string,
     const colW = (usable - nameW) / 7;
     let y = legendTop(doc.y - 4);
     // Sisa tinggi halaman dibagi rata untuk baris karyawan (kepala 30, jumlah 26, catatan ±40)
-    const rowH = Math.min(28, Math.max(16, (doc.page.height - MARGIN - y - 30 - 26 - 44) / Math.max(1, r.rows.length)));
+    const rowH = Math.min(28, Math.max(15, (doc.page.height - MARGIN - y - 30 - 26 - 16 - r.notes.length * 19) / Math.max(1, r.rows.length)));
 
     // Kepala kolom: hari + tanggal
     doc.rect(MARGIN, y, usable, 30).fill('#f1f5f9');
@@ -248,11 +279,21 @@ export function sendRosterPdf(res: Response, r: RosterData, generatedBy: string,
       doc.font('Helvetica').fontSize(8).fillColor('#be123c').text(`Hari libur: ${holidaysThisWeek.map((d) => `${DAY_LONG[weekday(d)]} ${ddmm(d)} – ${r.holidays.get(d)}`).join('; ')}`, MARGIN, y);
       y += 14;
     }
-    doc.font('Helvetica').fontSize(7.5).fillColor(MUTED);
-    for (const n of NOTES) {
-      doc.text(`•  ${n}`, MARGIN, y, { width: usable, lineBreak: false });
-      y += 10;
-    }
+    // Aturan dalam kotak kuning supaya terbaca saat dikirim ke grup; judul tiap butir dicetak tebal
+    doc.font('Helvetica').fontSize(7.8);
+    const noteH = r.notes.reduce((h, n) => h + doc.heightOfString(n, { width: usable - 30 }) + 2, 0) + 8;
+    doc.rect(MARGIN, y - 4, usable, noteH).fill('#fef9c3');
+    doc.rect(MARGIN, y - 4, 3, noteH).fill('#ca8a04');
+    let ny = y;
+    r.notes.forEach((n, i) => {
+      const cut = n.indexOf(': ');
+      doc.font('Helvetica-Bold').fontSize(7.8).fillColor(INK).text(`${i + 1}.`, MARGIN + 8, ny, { width: 14 });
+      if (cut > 0) {
+        doc.text(n.slice(0, cut + 1) + ' ', MARGIN + 22, ny, { width: usable - 30, continued: true });
+        doc.font('Helvetica').text(n.slice(cut + 2));
+      } else doc.font('Helvetica').text(n, MARGIN + 22, ny, { width: usable - 30 });
+      ny = doc.y + 2;
+    });
     // Footer di area margin bawah: matikan sementara batas bawah agar pdfkit tidak membuat halaman kosong
     const bottom = doc.page.margins.bottom;
     doc.page.margins.bottom = 0;
@@ -266,11 +307,12 @@ export function sendRosterPdf(res: Response, r: RosterData, generatedBy: string,
   const cols = [
     { label: 'No', w: 34 },
     { label: 'Nama Karyawan', w: 250 },
-    { label: 'Shift 1', w: 80 },
-    { label: 'Shift 2', w: 80 },
-    { label: 'Shift Penuh', w: 90 },
-    { label: 'Off', w: 70 },
-    { label: 'Hari Off', w: usable - 604 },
+    { label: 'Shift 1', w: 70 },
+    { label: 'Siang', w: 70 },
+    { label: 'Shift 2', w: 70 },
+    { label: 'Shift Penuh', w: 80 },
+    { label: 'Off', w: 60 },
+    { label: 'Hari Off', w: usable - 634 },
   ];
   let y = doc.y;
   const headerRow = () => {
@@ -288,7 +330,7 @@ export function sendRosterPdf(res: Response, r: RosterData, generatedBy: string,
     const offDays = r.dates.filter((_, i) => row.cells[i].kind === 'OFF');
     const offText = offDays.map((d) => `${DAY_SHORT[weekday(d)]} ${ddmm(d)}`).join(', ') || '—';
     doc.font('Helvetica').fontSize(8);
-    const h = Math.max(18, doc.heightOfString(offText, { width: cols[6].w - 12 }) + 8);
+    const h = Math.max(18, doc.heightOfString(offText, { width: cols[7].w - 12 }) + 8);
     if (y + h > doc.page.height - MARGIN - 20) {
       doc.addPage();
       header('Rekap per Karyawan (lanjutan)');
@@ -296,13 +338,13 @@ export function sendRosterPdf(res: Response, r: RosterData, generatedBy: string,
       headerRow();
     }
     if (ri % 2 === 1) doc.rect(MARGIN, y, usable, h).fill('#f8fafc');
-    const vals = [String(ri + 1), `${row.name}${row.coordinator ? ' (Koordinator)' : ''}`, String(c.S1 || '—'), String(c.S2 || '—'), String(c.FULL || '—'), String(c.OFF)];
+    const vals = [String(ri + 1), `${row.name}${row.coordinator ? ' (Koordinator)' : ''}`, String(c.S1 || '—'), String(c.SG || '—'), String(c.S2 || '—'), String(c.FULL || '—'), String(c.OFF)];
     let x = MARGIN;
     vals.forEach((v, i) => {
       doc.font(i === 1 && row.coordinator ? 'Helvetica-Bold' : 'Helvetica').fontSize(9).fillColor(INK).text(v, x + 6, y + 5, { width: cols[i].w - 12, align: i === 1 ? 'left' : 'center', lineBreak: false });
       x += cols[i].w;
     });
-    doc.font('Helvetica').fontSize(8).fillColor(MUTED).text(offText, x + 6, y + 5, { width: cols[6].w - 12 });
+    doc.font('Helvetica').fontSize(8).fillColor(MUTED).text(offText, x + 6, y + 5, { width: cols[7].w - 12 });
     doc.moveTo(MARGIN, y + h).lineTo(MARGIN + usable, y + h).lineWidth(0.4).strokeColor(GRID).stroke();
     y += h;
   });
@@ -334,7 +376,7 @@ export function sendRosterPdf(res: Response, r: RosterData, generatedBy: string,
       doc.text(row.name, MARGIN + 40, py + 5, { width: nameW - 10, lineBreak: false });
       let total = 0;
       r.posts.forEach((p, i) => {
-        const n = row.cells.filter((c) => c.post === p.code).length;
+        const n = row.cells.filter((c) => c.post?.split(' ')[0] === p.code).length;
         total += n;
         doc.text(n ? String(n) : '—', MARGIN + 34 + nameW + i * postW, py + 5, { width: postW, align: 'center' });
       });
@@ -479,7 +521,7 @@ export async function sendRosterXlsx(res: Response, r: RosterData, generatedBy: 
     ly++;
   }
   ly++;
-  for (const n of NOTES) {
+  for (const n of r.notes) {
     ws.mergeCells(ly, 2, ly, Math.min(lastCol, 16));
     ws.getCell(ly, 2).value = `• ${n}`;
     ws.getCell(ly, 2).font = { size: 9, color: { argb: 'FF64748B' } };
@@ -495,27 +537,27 @@ export async function sendRosterXlsx(res: Response, r: RosterData, generatedBy: 
   rk.mergeCells(1, 1, 1, 7 + r.posts.length);
   rk.getCell(1, 1).value = `Rekap Roster ${periodText(r)} (${r.dates.length} hari)`;
   rk.getCell(1, 1).font = { bold: true, size: 13, color: { argb: 'FF0C2B52' } };
-  const head = ['No', 'Nama Karyawan', 'Shift 1', 'Shift 2', 'Shift Penuh', 'Off', 'Tanggal Off', ...r.posts.map((p) => `Pos ${p.code}`)];
+  const head = ['No', 'Nama Karyawan', 'Shift 1', 'Siang', 'Shift 2', 'Shift Penuh', 'Off', 'Tanggal Off', ...r.posts.map((p) => `Pos ${p.code}`)];
   head.forEach((h, i) => {
     const c = rk.getCell(3, i + 1);
     c.value = h;
     c.font = { bold: true, color: { argb: 'FF334155' } };
     c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF1F5F9' } };
     c.border = border;
-    c.alignment = { horizontal: i === 1 || i === 6 ? 'left' : 'center' };
+    c.alignment = { horizontal: i === 1 || i === 7 ? 'left' : 'center' };
   });
   r.rows.forEach((row, ri) => {
     const c = counts(row.cells);
     const offs = r.dates.filter((_, i) => row.cells[i].kind === 'OFF').map((d) => `${DAY_SHORT[weekday(d)]} ${ddmm(d)}`).join(', ');
-    const vals = [ri + 1, `${row.name}${row.coordinator ? ' (Koordinator)' : ''}`, c.S1, c.S2, c.FULL, c.OFF, offs || '—', ...r.posts.map((p) => row.cells.filter((x) => x.post === p.code).length)];
+    const vals = [ri + 1, `${row.name}${row.coordinator ? ' (Koordinator)' : ''}`, c.S1, c.SG, c.S2, c.FULL, c.OFF, offs || '—', ...r.posts.map((p) => row.cells.filter((x) => x.post?.split(' ')[0] === p.code).length)];
     vals.forEach((v, i) => {
       const cell = rk.getCell(4 + ri, i + 1);
       cell.value = v;
       cell.border = border;
-      cell.alignment = { horizontal: i === 1 || i === 6 ? 'left' : 'center', wrapText: i === 6 };
+      cell.alignment = { horizontal: i === 1 || i === 7 ? 'left' : 'center', wrapText: i === 7 };
     });
   });
-  [5, 34, 10, 10, 12, 8, 70, ...r.posts.map(() => 9)].forEach((w, i) => (rk.getColumn(i + 1).width = w));
+  [5, 34, 10, 10, 10, 12, 8, 70, ...r.posts.map(() => 9)].forEach((w, i) => (rk.getColumn(i + 1).width = w));
   r.posts.forEach((p, i) => (rk.getCell(4 + r.rows.length + 2 + i, 2).value = `Pos ${p.code} = ${p.code === RESERVE.code ? p.name : `${p.area} — ${p.name}`}`));
 
   res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
@@ -531,67 +573,129 @@ const partOfDay = (t: string) => {
   return h < 11 ? 'PAGI' : h < 15 ? 'SIANG' : h < 18 ? 'SORE' : 'MALAM';
 };
 const longDate = (d: string) => `${DAY_LONG[weekday(d)]}, ${fmtLongDate(d)}`;
+const hhmm = (min: number) => `${String(Math.floor(min / 60)).padStart(2, '0')}.${String(min % 60).padStart(2, '0')}`;
+const SHIFT_ICON: Record<string, string> = { SHIFT_1: '☀️', SHIFT_SIANG: '🌤️', SHIFT_2: '🌙' };
+const LINE = '━━━━━━━━━━━━━━━━━━';
 
-/** Teks jadwal satu hari dengan format seperti jadwal manual manajemen tempat. */
+/** Jam absen satu shift, mis. "Absen masuk 07.30–08.00 · terlambat s.d. 08.15 · lewat itu ALFA" */
+function absenText(sh: ShiftWithSlots) {
+  const masuk = sh.slots.find((s) => s.type === 'MASUK');
+  const pulang = sh.slots.find((s) => s.type === 'PULANG');
+  const parts: string[] = [];
+  if (masuk) parts.push(`Absen masuk ${dot(masuk.windowStart)}–${dot(masuk.windowEnd)} · terlambat s.d. ${hhmm(slotDeadline(masuk))} · lewat itu *ALFA*`);
+  if (pulang) parts.push(`Absen pulang ${dot(pulang.windowStart)}–${dot(pulang.windowEnd)}`);
+  return parts;
+}
+
+/**
+ * Teks jadwal satu hari untuk grup WhatsApp: koordinator, tiap shift dengan jam absen & pos penempatan,
+ * daftar Off, lalu aturan yang wajib dibaca semua petugas.
+ */
 export async function buildWhatsappText(date: string): Promise<string> {
-  const [shifts, users, schedules, holiday, posts, org] = await Promise.all([
-    Shift.findAll({ order: [['id', 'ASC']] }),
+  const [shiftMap, users, schedules, holiday, posts, org] = await Promise.all([
+    loadShifts(),
     User.findAll({ where: { role: [...ATTENDEE_ROLES], isActive: true } }),
     EmployeeSchedule.findAll({ where: { date } }),
     Holiday.findOne({ where: { date } }),
     getPosts(),
     getOrgSettings(),
   ]);
+  const coordPostCode = await getCoordinatorPost(posts);
+  const shifts = [...shiftMap.values()];
   const name = new Map(users.map((u) => [u.id, u.fullName]));
-  const coordinators = new Set(users.filter((u) => u.role === 'KOORDINATOR').map((u) => u.id));
+  const coordinators = users.filter((u) => u.role === 'KOORDINATOR');
+  const isCoord = new Set(coordinators.map((u) => u.id));
   const rows = schedules.filter((s) => name.has(s.userId));
   const working = rows.filter((s) => s.shiftId !== null);
-  const coordNames = working.filter((s) => coordinators.has(s.userId)).map((s) => name.get(s.userId)!);
-  const coordText = coordNames.length ? coordNames.join(', ') : 'Off hari ini';
+  const shift2 = shifts.find((s) => s.code === 'SHIFT_2');
+  const handover = shift2 ? dot(shift2.startTime) : null; // jam Shift 2 masuk = jam Koordinator menyerahkan pos pagi
+  const postLabel = (code: string) => {
+    const p = posts.find((x) => x.code === code);
+    return p ? `${p.name} ${p.area.replace(/\s*—.*$/, '').replace(/^Lobi\s+/i, '')} (${p.code})` : code;
+  };
   const rotation = shifts
-    .filter((sh) => working.some((s) => s.shiftId === sh.id && !coordinators.has(s.userId)))
+    .filter((sh) => working.some((s) => s.shiftId === sh.id && !isCoord.has(s.userId)))
     .sort((a, b) => a.startTime.localeCompare(b.startTime) || a.id - b.id);
 
   const out: string[] = [];
-  out.push('📅 *JADWAL SHIFT PETUGAS PARKIRAN*', '', org.placeName, `📅 Berlaku: *${longDate(date)}*`);
+  out.push('🅿️ *JADWAL PETUGAS PARKIR*', `*${org.placeName}*`, `📅 *${longDate(date)}*`);
   if (holiday) out.push(`🎉 Hari libur: ${holiday.name}`);
-  out.push('', '✅ *INFORMASI UMUM*', '', '- 📌 Sistem Absensi: Absensi Online (wajah + lokasi di pos)');
-  for (const sh of rotation) out.push(`- ⏰ ${sh.name}: ${dot(sh.startTime)} – ${dot(sh.endTime)}`);
-  out.push(`- 👤 Koordinator: ${coordText}`);
 
+  // ── Koordinator ──
+  out.push('', LINE, '👮 *KOORDINATOR LAPANGAN*');
+  const coordToday = working.filter((s) => isCoord.has(s.userId));
+  if (coordToday.length) {
+    for (const c of coordToday) {
+      const sh = shiftMap.get(c.shiftId!);
+      out.push(`*${name.get(c.userId)}*${sh ? ` · ${dot(sh.startTime)} – ${dot(sh.endTime)} WIT` : ''}`);
+      if (c.post) {
+        out.push(`• Pagi s.d. ${handover ?? 'Shift 2 masuk'} : jaga *${postLabel(c.post)}*`);
+        out.push(`• Mulai ${handover ?? 'Shift 2 masuk'} : ${c.post} diserahkan ke petugas Shift 2, Koordinator mengawasi semua pos`);
+      } else out.push('• Mengawasi semua pos sepanjang hari');
+    }
+  } else {
+    const off = coordinators.map((u) => u.fullName).join(', ');
+    out.push(`${off || 'Koordinator'} *OFF* hari ini.`);
+    if (coordPostCode) out.push(`• Pos ${coordPostCode} pagi *kosong* sampai Shift 2 masuk${handover ? ` (${handover})` : ''}.`);
+  }
+
+  // ── Tiap shift ──
   for (const sh of rotation) {
     const members = working
-      .filter((s) => s.shiftId === sh.id && !coordinators.has(s.userId))
+      .filter((s) => s.shiftId === sh.id && !isCoord.has(s.userId))
       .sort((a, b) => name.get(a.userId)!.localeCompare(name.get(b.userId)!));
-    out.push('', `*${sh.name.toUpperCase()} — ${partOfDay(sh.startTime)} – ${partOfDay(sh.endTime)} · ${dot(sh.startTime)} – ${dot(sh.endTime)}*`, '', `Koordinator: ${coordText}`, '', 'Anggota:', '');
-    members.forEach((m, i) => out.push(`${i + 1}. ${name.get(m.userId)}`));
+    out.push('', LINE, `${SHIFT_ICON[sh.code] ?? '⏰'} *${sh.name.toUpperCase()} (${partOfDay(sh.startTime)}–${partOfDay(sh.endTime)})*`, `⏰ Jam kerja *${dot(sh.startTime)} – ${dot(sh.endTime)} WIT*`);
+    for (const t of absenText(sh)) out.push(`🕒 ${t}`);
+    const brk = sh.breakConfig?.enabled ? sh.breakConfig : null;
+    if (brk) out.push(`☕ Istirahat bergantian ${dot(brk.windowStart)}–${dot(brk.windowEnd)}, maks. ${brk.maxMinutes} menit (izin Koordinator)`);
+
     // Satu pos bisa berisi beberapa orang (mis. area parkiran / lot)
     const byPost = new Map<string, string[]>();
     for (const m of members.filter((x) => x.post)) byPost.set(m.post!, [...(byPost.get(m.post!) ?? []), name.get(m.userId)!]);
-    // Pagi hari Koordinator menjaga pos pintu tertentu (mis. KM) sampai Shift 2 masuk
     if (sh.code === 'SHIFT_1') {
-      for (const c of working.filter((x) => coordinators.has(x.userId) && x.post)) {
-        byPost.set(c.post!, [...(byPost.get(c.post!) ?? []), `${name.get(c.userId)} (Koordinator, sampai Shift 2 masuk)`]);
+      for (const c of coordToday.filter((x) => x.post)) byPost.set(c.post!, [...(byPost.get(c.post!) ?? []), `${name.get(c.userId)} _(Koordinator, s.d. ${handover ?? 'Shift 2 masuk'})_`]);
+    }
+    if (sh.code === 'SHIFT_2') {
+      // Penerima pos Koordinator (mis. KM) ditandai supaya jelas siapa yang mengambil alih
+      for (const c of coordToday.filter((x) => x.post)) {
+        const list = byPost.get(c.post!);
+        if (list) byPost.set(c.post!, list.map((n) => `${n} _(ambil alih dari Koordinator jam ${dot(sh.startTime)})_`));
       }
     }
+    out.push('');
     if (byPost.size) {
-      out.push('', '📍 *PENEMPATAN (PLOTTING):*');
       for (const area of [...new Set(posts.map((p) => p.area))]) {
         const inArea = posts.filter((p) => p.area === area && byPost.has(p.code));
         if (!inArea.length) continue;
-        out.push('', `🔹 ${area}`, '');
-        for (const p of inArea) out.push(`- ${p.name} : ${byPost.get(p.code)!.join(', ')}`);
+        out.push(`📍 *${area}*`);
+        for (const p of inArea) out.push(`   • ${p.name} (${p.code}) : ${byPost.get(p.code)!.join(', ')}`);
       }
       const reserve = members.filter((m) => m.post === RESERVE.code).map((m) => name.get(m.userId));
-      if (reserve.length) out.push('', `🔸 Cadangan (bantu pos ramai & gantikan saat istirahat): ${reserve.join(', ')}`);
+      if (reserve.length) out.push(`🔸 Cadangan (bantu pos ramai): ${reserve.join(', ')}`);
+      const loose = members.filter((m) => !m.post).map((m) => name.get(m.userId));
+      if (loose.length) out.push(`🔸 Pos diatur Koordinator: ${loose.join(', ')}`);
+    } else {
+      members.forEach((m, i) => out.push(`${i + 1}. ${name.get(m.userId)}`));
     }
+    out.push(`👥 ${members.length} petugas`);
   }
 
-  const off = rows.filter((s) => s.shiftId === null).map((s) => name.get(s.userId)!).sort();
+  // ── Off ──
+  const off = rows.filter((s) => s.shiftId === null && !isCoord.has(s.userId)).map((s) => name.get(s.userId)!).sort();
   if (off.length) {
-    out.push('', `*OFF / ISTIRAHAT — ${longDate(date)}*`, '');
+    out.push('', LINE, `🏠 *OFF HARI INI (${off.length} orang)*`);
     off.forEach((n, i) => out.push(`${i + 1}. ${n}`));
   }
   if (working.length === 0) out.push('', '_Belum ada jadwal untuk tanggal ini._');
+
+  // ── Aturan ──
+  out.push('', LINE, '📌 *WAJIB DIBACA SEMUA PETUGAS*');
+  out.push('1️⃣ Absen dengan *wajah sendiri* di pos, pada jam absen shift masing-masing.');
+  out.push('2️⃣ Tidak absen masuk sampai batas terlambat = *ALFA*. Setelah itu absen pulang *tidak bisa* dan status *tetap Alfa*.');
+  if (coordPostCode) {
+    out.push(`3️⃣ Pos ${coordPostCode} pagi dijaga Koordinator sampai ${handover ?? 'Shift 2 masuk'}. Bila petugas Shift 2 di ${coordPostCode} tidak masuk, *Koordinator yang menunjuk penggantinya*.`);
+  }
+  out.push(`${coordPostCode ? '4️⃣' : '3️⃣'} Koordinator berhak melakukan *rolling / tukar posisi* sesuai situasi di lapangan. *Semua petugas wajib mengikuti arahan Koordinator.*`);
+  out.push(`${coordPostCode ? '5️⃣' : '4️⃣'} Tukar shift atau izin wajib seizin Koordinator dan diajukan lewat aplikasi.`);
   return out.join('\n');
 }

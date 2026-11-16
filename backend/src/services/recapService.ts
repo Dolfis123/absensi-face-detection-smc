@@ -94,13 +94,18 @@ const emptySummary = (): Summary => ({
  * Status hari kerja dari absen yang tercatat (hari yang dijadwalkan, bukan libur/izin).
  * - Masuk + Pulang (atau Pulang belum ditutup) → Tepat Waktu / Terlambat sesuai Absen Masuk
  * - Masuk tanpa Pulang setelah jendela Pulang tutup → Absen Sekali "Hanya absen masuk"
- * - Tanpa Masuk tapi ada absen lain (mis. hanya Pulang) → Absen Sekali, bukan Alfa
+ * - Tanpa Masuk → Alfa (sejak NO_MASUK_ALFA_SINCE). Absen lain (mis. Pulang) tidak menolong:
+ *   lewat batas terlambat berarti Alfa, itu risiko petugas. Sebelum tanggal itu: Absen Sekali (aturan lama).
  * - Tidak ada absen sama sekali → Alfa (bila jendela Masuk sudah lewat) / Belum
  */
+/** Mulai tanggal ini, hari tanpa Absen Masuk selalu Alfa walau ada absen Pulang (riwayat sebelumnya tidak diubah). */
+export const NO_MASUK_ALFA_SINCE = '2026-11-16';
+
 export function classifyAttendance(
   atts: { slotType: SlotType; status: string }[],
   masukClosed: boolean,
   pulangClosed: boolean,
+  noMasukIsAlfa = true,
 ): { status: DayStatus; note: string | null } {
   const masuk = atts.find((a) => a.slotType === 'MASUK');
   const pulang = atts.find((a) => a.slotType === 'PULANG');
@@ -109,6 +114,9 @@ export function classifyAttendance(
       return { status: 'ABSEN_SEKALI', note: masuk.status === 'TERLAMBAT' ? 'Hanya absen masuk (masuk terlambat)' : 'Hanya absen masuk' };
     }
     return { status: masuk.status === 'TERLAMBAT' ? 'TERLAMBAT' : 'TEPAT_WAKTU', note: null };
+  }
+  if (atts.length > 0 && noMasukIsAlfa) {
+    return masukClosed ? { status: 'ALFA', note: 'Tidak absen masuk sampai batas terlambat' } : { status: 'BELUM', note: null };
   }
   if (atts.length > 0) {
     return { status: 'ABSEN_SEKALI', note: pulang && atts.length === 1 ? 'Hanya absen pulang' : 'Tidak absen masuk' };
@@ -219,6 +227,7 @@ export async function buildRecap(from: string, to: string, userIds?: number[]): 
         atts.map((a) => ({ slotType: a.slotType, status: a.status })),
         closedBy('MASUK'),
         closedBy('PULANG'),
+        date >= NO_MASUK_ALFA_SINCE,
       );
       if (result.status === 'TEPAT_WAKTU' || result.status === 'TERLAMBAT' || result.status === 'ABSEN_SEKALI') summary.hadir++;
       if (result.status === 'TEPAT_WAKTU') summary.tepatWaktu++;

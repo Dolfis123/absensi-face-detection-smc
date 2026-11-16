@@ -1,7 +1,7 @@
 export type Role = 'SUPER_ADMIN' | 'KOORDINATOR' | 'KARYAWAN';
 // ISTIRAHAT = mulai istirahat, KEMBALI = selesai istirahat
 export type SlotType = 'MASUK' | 'ISTIRAHAT' | 'KEMBALI' | 'PULANG';
-// ABSEN_SEKALI = hadir tapi absennya tidak lengkap (hanya Masuk, atau tanpa Masuk)
+// ABSEN_SEKALI = hadir tapi absennya tidak lengkap (hanya Masuk). Tanpa Absen Masuk = ALFA
 // OFF = belum dijadwalkan di roster; DAY_OFF = hari Off yang sengaja ditetapkan di roster
 export type DayStatus = 'TEPAT_WAKTU' | 'TERLAMBAT' | 'ABSEN_SEKALI' | 'ALFA' | 'IZIN' | 'SAKIT' | 'CUTI' | 'LIBUR' | 'OFF' | 'DAY_OFF' | 'BELUM';
 
