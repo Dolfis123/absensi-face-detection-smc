@@ -15,7 +15,6 @@ import disciplineRoutes from './routes/discipline';
 import payrollRoutes from './routes/payroll';
 import organizationRoutes from './routes/organization';
 import systemRoutes from './routes/system';
-import contractRoutes from './routes/contracts';
 
 export const app = express();
 
@@ -36,7 +35,6 @@ app.use('/api/discipline', requireAuth, disciplineRoutes);
 app.use('/api/payroll', requireAuth, payrollRoutes);
 app.use('/api/organization', organizationRoutes); // /public & /logo terbuka, sisanya butuh login
 app.use('/api/system', requireAuth, systemRoutes);
-app.use('/api/contracts', requireAuth, contractRoutes);
 app.use('/api', requireAuth, monitorRoutes);
 
 app.use('/api', (_req, res) => res.status(404).json({ message: 'Endpoint tidak ditemukan' }));

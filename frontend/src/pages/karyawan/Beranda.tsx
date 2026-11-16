@@ -36,7 +36,7 @@ export default function BerandaKaryawan() {
         api.get<Shift[]>('/shifts'),
         api.get<LeaveRequest[]>('/me/leaves'),
         api.get<{ lateToleranceMinutes: number }>('/settings'),
-        api.get<MyDocuments>('/me/documents').catch(() => ({ contracts: [], letters: [], slips: [], unread: 0 }) as MyDocuments),
+        api.get<MyDocuments>('/me/documents').catch(() => ({ letters: [], slips: [], unread: 0 }) as MyDocuments),
       ]),
     [today],
   );
@@ -144,7 +144,7 @@ export default function BerandaKaryawan() {
         <Link to="/app/dokumen" className="flex items-center gap-3 rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-900 hover:bg-rose-100">
           <Icon name="fileText" className="h-5 w-5 shrink-0" />
           <span className="flex-1">
-            Ada <b>{docs.unread} dokumen</b> dari perusahaan (kontrak / surat / slip upah) yang perlu Anda buka dan konfirmasi.
+            Ada <b>{docs.unread} dokumen</b> dari perusahaan (surat / slip upah) yang perlu Anda buka dan konfirmasi.
           </span>
           <Icon name="chevronRight" className="h-4 w-4" />
         </Link>

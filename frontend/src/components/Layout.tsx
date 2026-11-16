@@ -35,7 +35,7 @@ export const NAV_GROUPS: Record<Role, NavGroup[]> = {
       items: [
         { to: '/app/izin', label: 'Izin / Sakit / Cuti', icon: 'send', short: 'Izin' },
         { to: '/app/kendala', label: 'Lapor Kendala', icon: 'alert', short: 'Kendala' },
-        { to: '/app/dokumen', label: 'Kontrak, Surat & Slip', icon: 'fileText', short: 'Dokumen' },
+        { to: '/app/dokumen', label: 'Surat & Slip Saya', icon: 'fileText', short: 'Dokumen' },
       ],
     },
   ],
@@ -55,7 +55,7 @@ export const NAV_GROUPS: Record<Role, NavGroup[]> = {
         // { to: '/app/jadwal', label: 'Jadwal Saya', icon: 'calendar' },
         { to: '/app/izin', label: 'Izin / Sakit / Cuti', icon: 'send' },
         { to: '/app/kendala', label: 'Lapor Kendala', icon: 'alert' },
-        { to: '/app/dokumen', label: 'Kontrak, Surat & Slip', icon: 'fileText' },
+        { to: '/app/dokumen', label: 'Surat & Slip Saya', icon: 'fileText' },
       ],
     },
     {
@@ -107,7 +107,6 @@ export const NAV_GROUPS: Record<Role, NavGroup[]> = {
         { to: '/app/geofence', label: 'Geofence Pos', icon: 'mapPin' },
         { to: '/app/laporan', label: 'Laporan', icon: 'download' },
         { to: '/app/upah', label: 'Rekap Upah', icon: 'fileText' },
-        { to: '/app/kontrak', label: 'Kontrak PKWT', icon: 'fileText' },
         { to: '/app/identitas', label: 'Identitas & Kop Surat', icon: 'shield' },
         { to: '/app/sistem', label: 'Kesehatan Sistem', icon: 'activity' },
       ],

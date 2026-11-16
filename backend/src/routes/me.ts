@@ -4,10 +4,8 @@ import { Op } from 'sequelize';
 import { z } from 'zod';
 import { currentUser, requireRole } from '../middleware/auth';
 import { leaveAttachmentUpload } from '../middleware/upload';
-import { AttendanceIssue, DisciplineLetter, DocumentReceipt, EmployeeSchedule, EmploymentContract, Holiday, LEAVE_TYPES, LeaveRequest, PayrollPublication, Shift } from '../models';
-import { durationText } from '../services/contract';
+import { AttendanceIssue, DisciplineLetter, DocumentReceipt, EmployeeSchedule, Holiday, LEAVE_TYPES, LeaveRequest, PayrollPublication, Shift } from '../models';
 import { LETTER_TITLE } from '../services/discipline';
-import { sendContracts } from './contracts';
 import type { PayRow } from '../services/payroll';
 import { PayrollMeta, sendPayrollPdf } from '../services/payrollPdf';
 import { fmtMonth } from '../services/pdfReport';
@@ -146,10 +144,9 @@ router.get(
   '/documents',
   ah(async (req, res) => {
     const me = currentUser(req);
-    const [letters, pubs, contracts] = await Promise.all([
+    const [letters, pubs] = await Promise.all([
       DisciplineLetter.findAll({ where: { userId: me.id, voidedAt: null }, order: [['letterDate', 'DESC'], ['id', 'DESC']] }),
       PayrollPublication.findAll({ where: { withdrawnAt: null }, order: [['month', 'DESC']], limit: 24 }),
-      EmploymentContract.findAll({ where: { userId: me.id, voidedAt: null }, order: [['startDate', 'DESC']] }),
     ]);
     const mine = pubs
       .map((p) => ({ p, row: (p.rows as PayRow[]).find((r) => r.user.id === me.id) }))
@@ -160,16 +157,11 @@ router.get(
         [Op.or]: [
           { kind: 'LETTER', refId: letters.map((l) => l.id).concat(0) },
           { kind: 'SLIP', refId: mine.map((x) => x.p.id).concat(0) },
-          { kind: 'CONTRACT', refId: contracts.map((c) => c.id).concat(0) },
         ],
       },
     });
     const rec = (kind: string, refId: number, version: number) => receipts.find((r) => r.kind === kind && r.refId === refId && r.version === version);
     const out = {
-      contracts: contracts.map((c) => {
-        const r = rec('CONTRACT', c.id, 1);
-        return { id: c.id, number: c.number, startDate: c.startDate, endDate: c.endDate, duration: durationText(c.startDate, c.endDate), openedAt: r?.openedAt ?? null, receivedAt: r?.receivedAt ?? null };
-      }),
       letters: letters.map((l) => {
         const r = rec('LETTER', l.id, 1);
         return { id: l.id, type: l.type, title: LETTER_TITLE[l.type], number: l.number, letterDate: l.letterDate, openedAt: r?.openedAt ?? null, receivedAt: r?.receivedAt ?? null };
@@ -191,7 +183,7 @@ router.get(
         };
       }),
     };
-    res.json({ ...out, unread: [...out.letters, ...out.slips].filter((d) => !d.receivedAt).length + out.contracts.filter((d) => !d.receivedAt).length });
+    res.json({ ...out, unread: [...out.letters, ...out.slips].filter((d) => !d.receivedAt).length });
   }),
 );
 
@@ -215,30 +207,6 @@ router.post(
   ah(async (req, res) => {
     const l = await ownLetter(req);
     const r = await markReceived('LETTER', l.id, l.userId, 1, req.get('user-agent'));
-    res.json({ receivedAt: r.receivedAt });
-  }),
-);
-
-async function ownContract(req: Request) {
-  const c = await EmploymentContract.findByPk(Number(req.params.id));
-  if (!c || c.userId !== currentUser(req).id || c.voidedAt) throw new HttpError(404, 'Kontrak tidak ditemukan');
-  return c;
-}
-
-router.get(
-  '/contracts/:id/pdf',
-  ah(async (req, res) => {
-    const c = await ownContract(req);
-    await markOpened('CONTRACT', c.id, c.userId, 1, req.get('user-agent'));
-    await sendContracts(res, [c.id], 'pdf');
-  }),
-);
-
-router.post(
-  '/contracts/:id/receive',
-  ah(async (req, res) => {
-    const c = await ownContract(req);
-    const r = await markReceived('CONTRACT', c.id, c.userId, 1, req.get('user-agent'));
     res.json({ receivedAt: r.receivedAt });
   }),
 );

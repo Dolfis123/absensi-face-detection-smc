@@ -3,7 +3,7 @@
  * (Telegram + lonceng di aplikasi) bila ada masalah, serta ringkasan harian pukul 07.00 WIT.
  *
  * Pemeriksaan: layanan wajah, hasil backup & uji pemulihan (berkas status dari skrip deploy),
- * sisa ruang disk, surat disiplin yang belum diterima petugas lebih dari 3 hari, dan kontrak PKWT yang akan/sudah habis.
+ * sisa ruang disk, dan surat disiplin yang belum diterima petugas lebih dari 3 hari.
  * Bila backend sendiri mati, deploy/watchdog.sh yang mengirim peringatan.
  */
 import fs from 'fs';
@@ -12,7 +12,6 @@ import { Op } from 'sequelize';
 import { env } from '../config/env';
 import { AlertLevel, AppSetting, AttendanceIssue, DisciplineLetter, DocumentReceipt, LeaveRequest, SystemAlert, User } from '../models';
 import { overview as disciplineOverview } from '../routes/discipline';
-import { contractsNeedingAction, EXPIRY_URGENT_DAYS } from './contract';
 import { LETTER_TITLE } from './discipline';
 import { fmtLongDate } from './pdfReport';
 import { buildRecap } from './recapService';
@@ -90,14 +89,13 @@ const esc = (t: string) => t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replac
 const ICON: Record<AlertLevel, string> = { CRITICAL: '🔴', WARNING: '🟠', INFO: 'ℹ️' };
 
 // ───────────── Peringatan aktif ─────────────
-/** remind=false: tidak diulang tiap 6 jam (cukup sekali saat muncul / naik tingkat; tetap ada di ringkasan harian) */
-async function raise(key: string, level: AlertLevel, title: string, message: string, remindCritical = true) {
+async function raise(key: string, level: AlertLevel, title: string, message: string) {
   const now = new Date();
   const cur = await SystemAlert.findOne({ where: { key, active: true } });
   if (cur) {
     // Kirim lagi bila tingkatnya berubah (mis. WARNING → CRITICAL), atau pengingat tiap 6 jam untuk CRITICAL
     const levelChanged = cur.level !== level;
-    const remind = remindCritical && level === 'CRITICAL' && !!cur.notifiedAt && now.getTime() - cur.notifiedAt.getTime() > REMIND_CRITICAL_MS;
+    const remind = level === 'CRITICAL' && !!cur.notifiedAt && now.getTime() - cur.notifiedAt.getTime() > REMIND_CRITICAL_MS;
     const neverSent = level !== 'INFO' && !cur.notifiedAt; // mis. Telegram baru dipasang
     await cur.update({ level, title, message, lastAt: now });
     if ((levelChanged && level !== 'INFO') || remind || neverSent) {
@@ -190,25 +188,6 @@ export async function runChecks(): Promise<CheckResult> {
     await raise('letters-unread', 'WARNING', `${unread.length} surat belum diterima petugas (> 3 hari)`, `${list}\nSampaikan langsung lewat Koordinator.`);
   } else await resolve('letters-unread', 'Semua surat sudah diterima petugas.');
 
-  // 5) Kontrak PKWT: habis ≤ 14 hari tanpa perpanjangan (PKWT Pasal 2 ayat 3: beri tahu paling lambat 7 hari sebelumnya),
-  //    atau sudah habis padahal karyawan masih aktif
-  const ct = await contractsNeedingAction();
-  if (ct.expiring.length) {
-    const urgent = ct.expiring.some((x) => x.daysLeft <= EXPIRY_URGENT_DAYS);
-    const list = ct.expiring.slice(0, 10).map((x) => `• ${x.fullName} — habis ${fmtLongDate(x.contract.endDate)} (${x.daysLeft === 0 ? 'hari ini' : `${x.daysLeft} hari lagi`})`).join('\n');
-    await raise(
-      'contracts-expiring',
-      urgent ? 'CRITICAL' : 'WARNING',
-      `${ct.expiring.length} kontrak PKWT akan habis`,
-      `${list}${ct.expiring.length > 10 ? `\n… dan ${ct.expiring.length - 10} lainnya` : ''}\nPutuskan perpanjangan dan beri tahu karyawan paling lambat 7 hari sebelum kontrak habis (menu Kontrak PKWT).`,
-      false,
-    );
-  } else await resolve('contracts-expiring', 'Tidak ada lagi kontrak yang akan habis tanpa perpanjangan.');
-  if (ct.expired.length) {
-    const list = ct.expired.slice(0, 10).map((x) => `• ${x.fullName} — habis ${fmtLongDate(x.contract.endDate)}`).join('\n');
-    await raise('contracts-expired', 'WARNING', `${ct.expired.length} karyawan aktif bekerja tanpa kontrak`, `${list}\nBuat kontrak perpanjangan atau nonaktifkan akun karyawan yang sudah berhenti.`);
-  } else await resolve('contracts-expired', 'Semua karyawan aktif sudah memiliki kontrak yang berlaku.');
-
   last = { at: new Date().toISOString(), face, backup: { ...b, offsite }, restoreTest: rt, disk, unreadLetters: unread.length };
   return last;
 }
@@ -217,13 +196,12 @@ export async function runChecks(): Promise<CheckResult> {
 export async function dailySummaryText(): Promise<string> {
   const now = witNow();
   const y = addDays(now.date, -1);
-  const [recap, discipline, leaves, issues, alerts, ct] = await Promise.all([
+  const [recap, discipline, leaves, issues, alerts] = await Promise.all([
     buildRecap(y, y),
     disciplineOverview(),
     LeaveRequest.count({ where: { status: 'PENDING' } }),
     AttendanceIssue.count({ where: { status: ['OPEN', 'ESCALATED'] } }),
     SystemAlert.findAll({ where: { active: true } }),
-    contractsNeedingAction(),
   ]);
   const days = recap.map((r) => ({ name: r.user.fullName, d: r.days[0] })).filter((x) => x.d);
   const by = (s: string) => days.filter((x) => x.d.status === s).map((x) => x.name);
@@ -243,8 +221,6 @@ export async function dailySummaryText(): Promise<string> {
     need && `${need} karyawan perlu surat disiplin`,
     leaves && `${leaves} pengajuan izin menunggu`,
     issues && `${issues} laporan kendala terbuka`,
-    ct.expiring.length && `${ct.expiring.length} kontrak PKWT habis dalam ${ct.expiring[ct.expiring.length - 1].daysLeft} hari`,
-    ct.expired.length && `${ct.expired.length} karyawan aktif tanpa kontrak berlaku`,
     alerts.length && `${alerts.length} peringatan sistem aktif`,
   ].filter(Boolean);
   lines.push(todo.length ? `\n<b>Perlu tindakan:</b>\n• ${todo.join('\n• ')}` : '\n✅ Tidak ada yang perlu ditindaklanjuti.');
