@@ -7,6 +7,7 @@ import { loadSettings } from './services/settings';
 const SHIFTS = [
   {
     code: 'SHIFT_1',
+    lateToleranceMin: 60,
     name: 'Shift 1',
     startTime: '08:00',
     endTime: '16:00',
@@ -19,6 +20,7 @@ const SHIFTS = [
   },
   {
     code: 'SHIFT_2',
+    lateToleranceMin: 30,
     name: 'Shift 2',
     startTime: '16:00',
     endTime: '23:00',
@@ -33,6 +35,7 @@ const SHIFTS = [
     // Shift Siang: 2 petugas pria dari jatah pagi digeser ke siang untuk membantu Shift 2 di jam ramai.
     // Dibuat otomatis juga di database yang sudah berjalan (findOrCreate); jamnya bisa diubah di Pengaturan Shift.
     code: 'SHIFT_SIANG',
+    lateToleranceMin: 30,
     name: 'Shift Siang',
     startTime: '14:00',
     endTime: '22:00',
@@ -46,6 +49,7 @@ const SHIFTS = [
     // Masuk pagi, pulang malam (mis. Koordinator Lapangan atau karyawan dobel shift).
     // Dibuat otomatis juga di database yang sudah berjalan (findOrCreate); jamnya bisa diubah di Pengaturan Shift.
     code: 'SHIFT_PENUH',
+    lateToleranceMin: 60,
     name: 'Shift Penuh',
     startTime: '08:00',
     endTime: '23:00',

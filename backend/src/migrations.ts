@@ -11,6 +11,24 @@ import { addDays, hhmmToMinutes, minutesToHhmm, witNow } from './utils/time';
  */
 const MIGRATIONS: { id: string; up: () => Promise<void> }[] = [
   {
+    // Paling awal juga: migrasi lama membaca tabel shifts lewat model, jadi kolom barunya harus ada lebih dulu.
+    // Toleransi terlambat per shift: Shift 1 & Shift Penuh sampai 09.00 (60 menit), Shift Siang sampai 14.30
+    // dan Shift 2 sampai 16.30 (30 menit). Tidak menyentuh tabel users / data wajah.
+    id: '2026-11-16-toleransi-terlambat-per-shift',
+    async up() {
+      const cols = await sequelize.query<{ COLUMN_NAME: string }>(
+        "SELECT COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'shifts'",
+        { type: QueryTypes.SELECT },
+      );
+      if (!cols.some((c) => c.COLUMN_NAME === 'late_tolerance_min')) {
+        await sequelize.query('ALTER TABLE `shifts` ADD COLUMN `late_tolerance_min` SMALLINT UNSIGNED NULL');
+      }
+      for (const [code, minutes] of [['SHIFT_1', 60], ['SHIFT_PENUH', 60], ['SHIFT_SIANG', 30], ['SHIFT_2', 30]] as const) {
+        await sequelize.query('UPDATE `shifts` SET `late_tolerance_min` = ? WHERE `code` = ?', { replacements: [minutes, code] });
+      }
+    },
+  },
+  {
     // Paling awal: migrasi lain (mis. aturan roster SMC) membaca tabel roster_rules lewat model,
     // jadi kolom barunya harus sudah ada lebih dulu — juga untuk database yang dipulihkan dari backup lama.
     id: '2026-11-15-roster-rules-kolom-siang',

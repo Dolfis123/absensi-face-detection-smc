@@ -19,7 +19,7 @@ export async function loadShifts(): Promise<Map<number, ShiftWithSlots>> {
 }
 
 /** Batas akhir slot. Absen Masuk masih diterima (status TERLAMBAT) sampai toleransi habis. */
-export function slotDeadline(slot: Pick<ShiftSlot, 'type' | 'windowEnd'>, lateToleranceMin = getLateTolerance()): number {
+export function slotDeadline(slot: Pick<ShiftSlot, 'type' | 'windowEnd'> & { shiftId?: number | null }, lateToleranceMin = getLateTolerance(slot.shiftId)): number {
   const end = hhmmToMinutes(slot.windowEnd);
   return slot.type === 'MASUK' ? end + lateToleranceMin : end;
 }

@@ -16,6 +16,8 @@ interface ShiftDraft {
   endTime: string;
   slots: SlotDraft[];
   break: BreakConfig;
+  /** null = ikuti toleransi umum */
+  lateToleranceMin: number | null;
 }
 
 const DEFAULT_BREAK: BreakConfig = { enabled: false, windowStart: '12:00', windowEnd: '14:00', maxMinutes: 60, toleranceMinutes: 15 };
@@ -47,6 +49,7 @@ const toDraft = (s: Shift): ShiftDraft => ({
         toleranceMinutes: s.breakConfig.toleranceMinutes,
       }
     : DEFAULT_BREAK,
+  lateToleranceMin: s.lateToleranceMin ?? null,
 });
 const hhmmOf = (m: number) => `${String(Math.floor(m / 60) % 24).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
 const fmtMinutes = (m: number) => (m % 60 === 0 && m ? `${m / 60} jam` : `${m} menit`);
@@ -173,9 +176,11 @@ function BreakEditor({ value, onChange }: { value: BreakConfig; onChange: (v: Br
   );
 }
 
-function ShiftEditor({ shift, tolerance, onSaved }: { shift: Shift; tolerance: number; onSaved: () => void }) {
+function ShiftEditor({ shift, tolerance: globalTolerance, onSaved }: { shift: Shift; tolerance: number; onSaved: () => void }) {
   const original = toDraft(shift);
   const [draft, setDraft] = useState(original);
+  const tolerance = draft.lateToleranceMin ?? globalTolerance;
+  const masukSlot = draft.slots.find((s) => s.type === 'MASUK');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const { toast, confirm } = useFeedback();
@@ -269,11 +274,54 @@ function ShiftEditor({ shift, tolerance, onSaved }: { shift: Shift; tolerance: n
           ))}
         </div>
 
+        {masukSlot && (
+          <LateEditor
+            closeAt={masukSlot.windowEnd}
+            value={draft.lateToleranceMin}
+            globalTolerance={globalTolerance}
+            onChange={(v) => setDraft((d) => ({ ...d, lateToleranceMin: v }))}
+          />
+        )}
+
         <BreakEditor value={draft.break} onChange={(b) => setDraft((d) => ({ ...d, break: b }))} />
 
         <Timeline draft={draft} tolerance={tolerance} />
       </div>
     </Card>
+  );
+}
+
+/** Batas terlambat Absen Masuk khusus shift ini, diisi sebagai jam (mis. "09:00"); lewat dari itu Alfa. */
+function LateEditor({ closeAt, value, globalTolerance, onChange }: { closeAt: string; value: number | null; globalTolerance: number; onChange: (v: number | null) => void }) {
+  const own = value !== null;
+  const minutes = value ?? globalTolerance;
+  const until = hhmmOf(toMin(closeAt) + minutes);
+  return (
+    <div className={cx('rounded-xl border p-4', own ? 'border-amber-200 bg-amber-50/50' : 'border-slate-200')}>
+      <p className="text-sm font-semibold text-slate-900">Batas terlambat Absen Masuk</p>
+      <p className="mb-3 text-xs text-slate-500">Absen Masuk setelah {closeAt} masih diterima sebagai Terlambat sampai batas ini. Lewat dari batas = ALFA (absen pulang juga tidak bisa).</p>
+      <div className="flex flex-wrap items-end gap-3">
+        <label className="flex items-center gap-2 text-sm">
+          <input type="radio" checked={!own} onChange={() => onChange(null)} />
+          Ikuti toleransi umum ({fmtMinutes(globalTolerance)} → sampai {hhmmOf(toMin(closeAt) + globalTolerance)})
+        </label>
+        <label className="flex items-center gap-2 text-sm">
+          <input type="radio" checked={own} onChange={() => onChange(minutes)} />
+          Khusus shift ini, terlambat sampai jam
+        </label>
+        <Input
+          type="time"
+          className="!w-32"
+          disabled={!own}
+          value={until}
+          onChange={(e) => {
+            if (!e.target.value) return;
+            onChange(Math.max(0, Math.min(240, toMin(e.target.value) - toMin(closeAt))));
+          }}
+        />
+        {own && <span className="pb-2 text-xs text-slate-500">= {fmtMinutes(minutes)} setelah {closeAt}</span>}
+      </div>
+    </div>
   );
 }
 
@@ -287,7 +335,7 @@ function ToleranceCard({ value, onSaved }: { value: number; onSaved: () => void 
   async function save() {
     const ok = await confirm({
       title: 'Ubah toleransi terlambat?',
-      message: `Absen Masuk akan diterima sebagai Terlambat sampai ${fmtMinutes(minutes)} setelah jendela masuk ditutup. Lewat dari itu dihitung Alfa. Berlaku untuk semua shift.`,
+      message: `Absen Masuk akan diterima sebagai Terlambat sampai ${fmtMinutes(minutes)} setelah jendela masuk ditutup. Lewat dari itu dihitung Alfa. Berlaku untuk shift yang tidak punya batas terlambat sendiri.`,
       confirmLabel: 'Simpan',
     });
     if (!ok) return;
@@ -305,7 +353,7 @@ function ToleranceCard({ value, onSaved }: { value: number; onSaved: () => void 
   }
 
   return (
-    <Card title="Toleransi terlambat" subtitle="Berlaku untuk Absen Masuk di semua shift">
+    <Card title="Toleransi terlambat umum" subtitle="Dipakai shift yang tidak punya batas terlambat sendiri (atur per shift di kartu masing-masing di bawah)">
       <div className="space-y-4">
         {error && <Alert>{error}</Alert>}
         <div className="flex flex-wrap items-end gap-3">
@@ -352,6 +400,10 @@ function describe(log: ChangeLog) {
       parts.push(`${SLOT_LABEL[s.type]} ${b.windowStart}–${b.windowEnd} → ${s.windowStart}–${s.windowEnd}`);
     }
   });
+  if (log.after.lateToleranceMin !== undefined && log.before.lateToleranceMin !== log.after.lateToleranceMin) {
+    const t = (v?: number | null) => (v == null ? 'ikuti umum' : fmtMinutes(v));
+    parts.push(`Batas terlambat ${t(log.before.lateToleranceMin)} → ${t(log.after.lateToleranceMin)}`);
+  }
   const bb = log.before.break;
   const ab = log.after.break;
   if (ab && JSON.stringify(bb) !== JSON.stringify(ab)) {

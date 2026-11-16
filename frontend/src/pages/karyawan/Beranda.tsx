@@ -53,10 +53,11 @@ export default function BerandaKaryawan() {
   }
 
   const [recap, sched, shifts, leaves, settings, docs] = data;
-  const lateTolerance = settings.lateToleranceMinutes;
   const todayRecord = recap.days.find((d) => d.date === today);
   const todayShiftRef = sched.schedules.find((s) => s.date === today)?.shift ?? null;
   const shift = todayShiftRef ? shifts.find((s) => s.id === todayShiftRef.id) : undefined;
+  // Batas terlambat khusus shift (mis. Shift 1 sampai 09.00), selain itu toleransi umum
+  const lateTolerance = shift?.lateToleranceMin ?? settings.lateToleranceMinutes;
   const holiday = sched.holidays.find((h) => h.date === today);
   const offToday = !!sched.schedules.find((s) => s.date === today)?.off;
   const blocked = todayRecord && ['IZIN', 'SAKIT', 'CUTI', 'LIBUR', 'DAY_OFF'].includes(todayRecord.status);

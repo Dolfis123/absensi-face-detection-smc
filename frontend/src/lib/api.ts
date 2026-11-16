@@ -28,6 +28,8 @@ export interface Shift {
   name: string;
   startTime: string;
   endTime: string;
+  /** Toleransi terlambat khusus shift ini (menit); null = ikuti toleransi umum */
+  lateToleranceMin?: number | null;
   slots: { id: number; type: SlotType; windowStart: string; windowEnd: string }[];
   breakConfig: BreakConfig | null;
 }

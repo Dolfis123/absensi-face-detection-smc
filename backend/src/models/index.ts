@@ -36,6 +36,8 @@ export class Shift extends Model<InferAttributes<Shift>, InferCreationAttributes
   declare name: string;
   declare startTime: string; // HH:MM WIT
   declare endTime: string;
+  /** Toleransi terlambat Absen Masuk khusus shift ini (menit); null = ikuti toleransi umum */
+  declare lateToleranceMin: CreationOptional<number | null>;
   declare slots?: NonAttribute<ShiftSlot[]>;
   declare breakConfig?: NonAttribute<ShiftBreak | null>;
 }
@@ -46,6 +48,7 @@ Shift.init(
     name: { type: DataTypes.STRING(50), allowNull: false },
     startTime: { type: DataTypes.STRING(5), allowNull: false },
     endTime: { type: DataTypes.STRING(5), allowNull: false },
+    lateToleranceMin: { type: DataTypes.SMALLINT.UNSIGNED, allowNull: true },
   },
   { sequelize, tableName: 'shifts' },
 );

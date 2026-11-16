@@ -10,7 +10,7 @@ import { getPosts, postLabel } from '../services/placement';
 import { sendCsv } from '../services/csv';
 import { dayNotes, fmtLongDate, fmtMonth, sendAttendancePdf } from '../services/pdfReport';
 import { buildRecap } from '../services/recapService';
-import { getLateTolerance } from '../services/settings';
+import { getGlobalLateTolerance, shiftLateTolerances } from '../services/settings';
 import { ah, HttpError } from '../utils/http';
 import { DATE_RE, MONTH_RE, monthRange, witNow } from '../utils/time';
 
@@ -40,7 +40,7 @@ router.get(
 );
 
 router.get('/settings', (_req, res) => {
-  res.json({ lateToleranceMinutes: getLateTolerance() });
+  res.json({ lateToleranceMinutes: getGlobalLateTolerance(), byShift: shiftLateTolerances() });
 });
 
 router.get(

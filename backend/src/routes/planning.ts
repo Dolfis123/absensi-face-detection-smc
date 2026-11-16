@@ -7,7 +7,7 @@ import { assignPlacements, DEFAULT_POSTS, getCoordinatorPost, getPosts, groupsOf
 import { buildWhatsappText, loadRosterData, sendRosterPdf, sendRosterXlsx } from '../services/rosterExport';
 import { GenEmployee, generateBestRoster } from '../services/rosterGenerator';
 import { RosterInfeasible, SolverUnavailable, solveRoster } from '../services/rosterSolver';
-import { getLateTolerance, saveLateTolerance } from '../services/settings';
+import { getGlobalLateTolerance, getLateTolerance, saveLateTolerance, setShiftLateTolerance } from '../services/settings';
 import { BreakInput, loadShifts, SlotInput, validateShiftTimes } from '../services/shiftService';
 import { ah, HttpError } from '../utils/http';
 import { addDays, DATE_RE, eachDate, witNow } from '../utils/time';
@@ -148,7 +148,7 @@ router.get(
         limit: 50,
       }),
     ]);
-    res.json({ shifts: [...shifts.values()], lateToleranceMinutes: getLateTolerance(), logs });
+    res.json({ shifts: [...shifts.values()], lateToleranceMinutes: getGlobalLateTolerance(), logs });
   }),
 );
 
@@ -162,6 +162,8 @@ router.put(
         endTime: hhmm,
         slots: z.array(z.object({ type: z.enum(SLOT_TYPES), windowStart: hhmm, windowEnd: hhmm })).min(1),
         break: breakSchema,
+        // null = ikuti toleransi umum
+        lateToleranceMin: z.number().int().min(0).max(240).nullable().optional(),
       })
       .parse(req.body);
     const shift = (await loadShifts()).get(Number(req.params.id));
@@ -169,21 +171,23 @@ router.put(
     if (body.slots.length !== shift.slots.length || shift.slots.some((s, i) => body.slots[i].type !== s.type)) {
       throw new HttpError(400, 'Jenis dan urutan slot absen tidak boleh diubah, hanya jamnya');
     }
-    const problem = validateShiftTimes(shift.name, body.startTime, body.endTime, body.slots, getLateTolerance(), body.break);
+    const late = body.lateToleranceMin === undefined ? shift.lateToleranceMin : body.lateToleranceMin;
+    const problem = validateShiftTimes(shift.name, body.startTime, body.endTime, body.slots, late ?? getGlobalLateTolerance(), body.break);
     if (problem) throw new HttpError(400, problem);
 
-    const before = snapshot(shift.startTime, shift.endTime, shift.slots, shift.breakConfig);
-    const after = snapshot(body.startTime, body.endTime, body.slots, body.break);
+    const before = { ...snapshot(shift.startTime, shift.endTime, shift.slots, shift.breakConfig), lateToleranceMin: shift.lateToleranceMin };
+    const after = { ...snapshot(body.startTime, body.endTime, body.slots, body.break), lateToleranceMin: late };
     if (JSON.stringify(before) === JSON.stringify(after)) return res.json({ changed: false });
 
     await sequelize.transaction(async (transaction) => {
-      await shift.update({ startTime: body.startTime, endTime: body.endTime }, { transaction });
+      await shift.update({ startTime: body.startTime, endTime: body.endTime, lateToleranceMin: late }, { transaction });
       for (const [i, slot] of shift.slots.entries()) {
         await slot.update({ windowStart: body.slots[i].windowStart, windowEnd: body.slots[i].windowEnd }, { transaction });
       }
       await ShiftBreak.upsert({ shiftId: shift.id, ...body.break }, { transaction });
       await ShiftChangeLog.create({ actorId: currentUser(req).id, target: shift.name, before, after }, { transaction });
     });
+    setShiftLateTolerance(shift.id, late);
     res.json({ changed: true });
   }),
 );
@@ -193,13 +197,14 @@ router.put(
   adminOnly,
   ah(async (req, res) => {
     const { minutes } = z.object({ minutes: z.number().int().min(0).max(240) }).parse(req.body);
-    // Toleransi baru tidak boleh membuat jendela Masuk bertabrakan dengan slot berikutnya di shift mana pun
+    // Toleransi baru tidak boleh membuat jendela Masuk bertabrakan dengan slot berikutnya di shift yang memakainya
     for (const s of (await loadShifts()).values()) {
+      if (s.lateToleranceMin != null) continue; // shift ini punya batas terlambat sendiri
       const problem = validateShiftTimes(s.name, s.startTime, s.endTime, s.slots, minutes, s.breakConfig);
       if (problem) throw new HttpError(400, problem);
     }
-    if (minutes !== getLateTolerance()) await saveLateTolerance(minutes, currentUser(req).id);
-    res.json({ lateToleranceMinutes: getLateTolerance() });
+    if (minutes !== getGlobalLateTolerance()) await saveLateTolerance(minutes, currentUser(req).id);
+    res.json({ lateToleranceMinutes: getGlobalLateTolerance() });
   }),
 );
 
