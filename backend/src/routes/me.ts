@@ -52,6 +52,7 @@ router.get(
         date: s.date,
         off: s.shiftId === null,
         post: postLabel(posts, s.post),
+        postCode: s.post,
         shift: s.shift && { id: s.shift.id, name: s.shift.name, startTime: s.shift.startTime, endTime: s.shift.endTime },
       })),
       holidays,

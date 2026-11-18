@@ -318,6 +318,78 @@ export default function Karyawan() {
 
   const set = <K extends keyof FormState>(k: K, v: FormState[K]) => setForm((f) => ({ ...f, [k]: v }));
 
+  const RoleBadge = ({ role }: { role: PublicUser['role'] }) => (
+    <Badge
+      className={
+        role === 'SUPER_ADMIN'
+          ? 'bg-brand-900 text-white'
+          : role === 'KOORDINATOR'
+            ? 'bg-violet-50 text-violet-700 ring-1 ring-violet-600/15'
+            : 'bg-sky-50 text-sky-700 ring-1 ring-sky-600/15'
+      }
+    >
+      {ROLE_LABEL[role]}
+    </Badge>
+  );
+  const StatusDot = ({ u }: { u: PublicUser }) => (
+    <>
+      <span className="inline-flex items-center gap-1.5 text-xs text-slate-700">
+        <span className={`h-2 w-2 rounded-full ${u.isActive ? 'bg-emerald-500' : 'bg-slate-300'}`} />
+        {u.isActive ? 'Aktif' : 'Nonaktif'}
+      </span>
+      {u.testAccount && (
+        <span title="Tidak ikut laporan, rekap upah, disiplin, monitoring & roster">
+          <Badge className="bg-amber-100 text-amber-800">Akun uji coba</Badge>
+        </span>
+      )}
+    </>
+  );
+  const FaceBadges = ({ u }: { u: PublicUser }) => (
+    <>
+      {u.faceOutdated ? (
+        <span title="Data wajah dari mesin pengenal lama. Daftarkan ulang lewat tombol Wajah agar bisa absen.">
+          <Badge className="bg-rose-50 text-rose-700 ring-1 ring-rose-600/15">Wajah: daftar ulang</Badge>
+        </span>
+      ) : !u.hasFace ? (
+        <Badge className="bg-rose-50 text-rose-700 ring-1 ring-rose-600/15">Wajah belum ada</Badge>
+      ) : u.faceCount < MIN_FACE_PHOTOS ? (
+        <span title="Didaftarkan dengan format lama (1 foto). Sebaiknya daftar ulang.">
+          <Badge className="bg-amber-50 text-amber-800 ring-1 ring-amber-600/20">{u.faceCount} foto · daftar ulang</Badge>
+        </span>
+      ) : (
+        <Badge className="bg-emerald-50 text-emerald-700 ring-1 ring-emerald-600/15">{u.faceCount} foto wajah</Badge>
+      )}
+      {u.hasPin && (
+        <span title="Absen wajib memakai PIN (wajah mirip karyawan lain)">
+          <Badge className="bg-violet-50 text-violet-700 ring-1 ring-violet-600/15">PIN</Badge>
+        </span>
+      )}
+    </>
+  );
+  const RowActions = ({ u }: { u: PublicUser }) => (
+    <div className="flex flex-wrap justify-end gap-1">
+      <Button variant="ghost" className="!px-2.5 !py-1 text-xs" onClick={() => open({ type: 'edit', user: u })}>
+        Edit
+      </Button>
+      {u.role !== 'SUPER_ADMIN' && (
+        <>
+          <Button variant="ghost" className="!px-2.5 !py-1 text-xs" onClick={() => open({ type: 'face', user: u })}>
+            Wajah
+          </Button>
+          <Button variant="ghost" className="!px-2.5 !py-1 text-xs" onClick={() => open({ type: 'pin', user: u })}>
+            PIN
+          </Button>
+          <Button variant="ghost" className="!px-2.5 !py-1 text-xs" onClick={() => toggleTest(u)} title="Akun uji coba tidak ikut laporan">
+            {u.testAccount ? 'Bukan uji' : 'Akun uji'}
+          </Button>
+        </>
+      )}
+      <Button variant="ghost" className="!px-2.5 !py-1 text-xs text-rose-600" onClick={() => remove(u)}>
+        Hapus
+      </Button>
+    </div>
+  );
+
   return (
     <>
       <PageHeader
@@ -337,107 +409,58 @@ export default function Karyawan() {
         {visible.length === 0 ? (
           <Empty icon="search" title="Tidak ada pengguna yang cocok" />
         ) : (
+        <>
+        {/* HP: kartu per pengguna */}
+        <div className="-mx-1 space-y-2 md:hidden">
+          {visible.map((u) => (
+            <div key={u.id} className="rounded-xl border border-slate-200 p-3">
+              <PersonCell name={u.fullName} sub={`${u.nik} · ${u.username}`} />
+              <div className="mt-2 flex flex-wrap items-center gap-1.5 text-xs text-slate-600">
+                <RoleBadge role={u.role} />
+                <StatusDot u={u} />
+                {u.role !== 'SUPER_ADMIN' && <FaceBadges u={u} />}
+                {u.phone && <span className="text-slate-500">· {u.phone}</span>}
+                {u.role !== 'SUPER_ADMIN' && shiftName(u.defaultShiftId) !== '—' && <span className="text-slate-500">· {shiftName(u.defaultShiftId)}</span>}
+              </div>
+              {!u.immutable && <div className="mt-2 border-t border-slate-100 pt-2"><RowActions u={u} /></div>}
+            </div>
+          ))}
+        </div>
+        <div className="hidden md:block">
         <Table>
           <thead>
             <tr>
-              <Th>Nama / NIK</Th>
-              <Th>Role</Th>
-              <Th>Username</Th>
+              <Th>Pengguna</Th>
+              <Th>Role & shift</Th>
               <Th>No. HP</Th>
-              <Th>Shift Default</Th>
-              <Th>Wajah</Th>
-              <Th>Status</Th>
-              <Th />
+              <Th>Wajah & status</Th>
+              <Th className="text-right">Aksi</Th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
             {visible.map((u) => (
               <tr key={u.id}>
                 <Td>
-                  <PersonCell name={u.fullName} sub={u.nik} />
+                  <PersonCell name={u.fullName} sub={`${u.nik} · ${u.username}`} />
                 </Td>
                 <Td>
-                  <Badge
-                    className={
-                      u.role === 'SUPER_ADMIN'
-                        ? 'bg-brand-900 text-white'
-                        : u.role === 'KOORDINATOR'
-                          ? 'bg-violet-50 text-violet-700 ring-1 ring-violet-600/15'
-                          : 'bg-sky-50 text-sky-700 ring-1 ring-sky-600/15'
-                    }
-                  >
-                    {ROLE_LABEL[u.role]}
-                  </Badge>
+                  <RoleBadge role={u.role} />
+                  {u.role !== 'SUPER_ADMIN' && shiftName(u.defaultShiftId) !== '—' && <div className="mt-1 text-xs text-slate-500">{shiftName(u.defaultShiftId)}</div>}
                 </Td>
-                <Td className="font-mono text-xs">{u.username}</Td>
-                <Td>{u.phone}</Td>
-                <Td>{u.role === 'SUPER_ADMIN' ? '—' : shiftName(u.defaultShiftId)}</Td>
+                <Td className="text-sm">{u.phone}</Td>
                 <Td>
-                  {u.role === 'SUPER_ADMIN' ? (
-                    <span className="text-slate-300">—</span>
-                  ) : u.faceOutdated ? (
-                    <span title="Data wajah dari mesin pengenal lama. Daftarkan ulang lewat tombol Wajah agar bisa absen.">
-                      <Badge className="bg-rose-50 text-rose-700 ring-1 ring-rose-600/15">Daftar ulang</Badge>
-                    </span>
-                  ) : !u.hasFace ? (
-                    <Badge className="bg-rose-50 text-rose-700 ring-1 ring-rose-600/15">Belum ada</Badge>
-                  ) : u.faceCount < MIN_FACE_PHOTOS ? (
-                    <span title="Didaftarkan dengan format lama (1 foto). Sebaiknya daftar ulang.">
-                      <Badge className="bg-amber-50 text-amber-800 ring-1 ring-amber-600/20">{u.faceCount} foto · daftar ulang</Badge>
-                    </span>
-                  ) : (
-                    <Badge className="bg-emerald-50 text-emerald-700 ring-1 ring-emerald-600/15">{u.faceCount} foto</Badge>
-                  )}
-                  {u.hasPin && (
-                    <span title="Absen wajib memakai PIN (wajah mirip karyawan lain)">
-                      <Badge className="ml-1 bg-violet-50 text-violet-700 ring-1 ring-violet-600/15">PIN</Badge>
-                    </span>
-                  )}
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {u.role !== 'SUPER_ADMIN' && <FaceBadges u={u} />}
+                    <StatusDot u={u} />
+                  </div>
                 </Td>
-                <Td>
-                  <span className="inline-flex items-center gap-1.5 text-sm">
-                    <span className={`h-2 w-2 rounded-full ${u.isActive ? 'bg-emerald-500' : 'bg-slate-300'}`} />
-                    {u.isActive ? 'Aktif' : 'Nonaktif'}
-                  </span>
-                  {u.testAccount && (
-                    <span title="Tidak ikut laporan, rekap upah, disiplin, monitoring & roster">
-                      <Badge className="ml-1 bg-amber-100 text-amber-800">Akun uji coba</Badge>
-                    </span>
-                  )}
-                </Td>
-                <Td>
-                  {u.immutable ? (
-                    <span className="text-xs text-slate-400">🔒 Permanen</span>
-                  ) : (
-                    <div className="flex gap-1">
-                      <Button variant="ghost" onClick={() => open({ type: 'edit', user: u })}>
-                        Edit
-                      </Button>
-                      {u.role !== 'SUPER_ADMIN' && (
-                        <Button variant="ghost" onClick={() => open({ type: 'face', user: u })}>
-                          Wajah
-                        </Button>
-                      )}
-                      {u.role !== 'SUPER_ADMIN' && (
-                        <Button variant="ghost" onClick={() => open({ type: 'pin', user: u })}>
-                          PIN
-                        </Button>
-                      )}
-                      {u.role !== 'SUPER_ADMIN' && (
-                        <Button variant="ghost" onClick={() => toggleTest(u)} title="Akun uji coba tidak ikut laporan">
-                          {u.testAccount ? 'Bukan uji' : 'Akun uji'}
-                        </Button>
-                      )}
-                      <Button variant="ghost" className="text-rose-600" onClick={() => remove(u)}>
-                        Hapus
-                      </Button>
-                    </div>
-                  )}
-                </Td>
+                <Td className="text-right">{u.immutable ? <span className="text-xs text-slate-400">🔒 Permanen</span> : <RowActions u={u} />}</Td>
               </tr>
             ))}
           </tbody>
         </Table>
+        </div>
+        </>
         )}
       </Card>
 

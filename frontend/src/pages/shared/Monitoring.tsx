@@ -3,7 +3,7 @@ import { BreakCell, SlotTime, StatusBadge, useLoad } from '../../components/atte
 import { Icon } from '../../components/icons';
 import { MarkNotWorkingModal } from '../../components/notWorking';
 import { useAuth } from '../../lib/auth';
-import { Alert, Button, Card, cx, Empty, Loading, PageHeader, PersonCell, SearchInput, Table, Td, Th } from '../../components/ui';
+import { Alert, Avatar, Button, Card, cx, Empty, Loading, PageHeader, PersonCell, SearchInput, Table, Td, Th } from '../../components/ui';
 import { api, DayRecord, DayStatus, Role } from '../../lib/api';
 import { fmtDate, STATUS_STYLE } from '../../lib/format';
 
@@ -85,16 +85,79 @@ export default function Monitoring() {
         ) : visible.length === 0 ? (
           <Empty icon="search" title="Tidak ada karyawan yang cocok" />
         ) : (
+          <>
+          {/* HP: kartu per orang supaya status, pos, dan jam langsung terlihat tanpa digeser */}
+          <div className="-mx-1 space-y-2 md:hidden">
+            {visible.map((r) => (
+              <div key={r.user.id} className={cx('rounded-xl border border-slate-200 p-3', (r.status === 'OFF' || r.status === 'DAY_OFF') && 'opacity-60')}>
+                <div className="flex items-start gap-3">
+                  <Avatar name={r.user.fullName} size="sm" />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-semibold text-slate-900">{r.user.fullName}</p>
+                        <p className="truncate text-xs text-slate-500">
+                          {r.user.role === 'KOORDINATOR' ? 'Koordinator · ' : ''}
+                          {r.shiftName ?? 'Tidak dijadwalkan'}
+                        </p>
+                      </div>
+                      <StatusBadge status={r.status} />
+                    </div>
+                    {r.post && (
+                      <p className="mt-1 flex items-center gap-1 text-xs text-slate-600">
+                        <Icon name="mapPin" className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                        <span>{r.post.replace(/\s*—\s*Area Parkiran/, '')}</span>
+                      </p>
+                    )}
+                    {r.note && (r.status === 'ABSEN_SEKALI' || r.status === 'ALFA') && (
+                      <p className={cx('mt-1 text-xs', r.status === 'ALFA' ? 'text-rose-700' : 'text-violet-700')}>{r.note}</p>
+                    )}
+                    {!['OFF', 'DAY_OFF', 'IZIN', 'SAKIT', 'CUTI', 'LIBUR'].includes(r.status) && (
+                      <div className="mt-2 grid grid-cols-3 gap-1.5 text-center">
+                        {(['MASUK', 'ISTIRAHAT', 'PULANG'] as const).map((slot) => (
+                          <div key={slot} className="rounded-lg bg-slate-50 px-1 py-1.5">
+                            <p className="text-[10px] uppercase tracking-wide text-slate-400">{slot === 'MASUK' ? 'Masuk' : slot === 'PULANG' ? 'Pulang' : 'Istirahat'}</p>
+                            <p className="font-mono text-xs text-slate-800">
+                              {slot === 'ISTIRAHAT'
+                                ? r.break?.start
+                                  ? `${r.break.start.slice(0, 5)}${r.break.end ? `–${r.break.end.slice(0, 5)}` : '…'}`
+                                  : '—'
+                                : (r.slots[slot]?.time.slice(0, 5) ?? '—')}
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                      <a
+                        className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700"
+                        href={`https://wa.me/${r.user.phone.replace(/^0/, '62').replace(/\D/g, '')}`}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        <Icon name="phone" className="h-3.5 w-3.5" />
+                        WhatsApp
+                      </a>
+                      {isAdmin && ['TEPAT_WAKTU', 'TERLAMBAT', 'ABSEN_SEKALI'].includes(r.status) && (
+                        <button className="rounded-lg px-2.5 py-1 text-xs font-medium text-rose-700 ring-1 ring-rose-200" onClick={() => setMarkUser(r.user.id)}>
+                          Tandai tidak bekerja
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="hidden md:block">
           <Table>
             <thead>
               <tr>
                 <Th>Karyawan</Th>
                 <Th>Shift</Th>
                 <Th>Status</Th>
-                <Th>Masuk</Th>
-                <Th>Istirahat</Th>
-                <Th>Pulang</Th>
-                <Th>Kontak</Th>
+                <Th>Jam absen</Th>
+                <Th className="text-right">Kontak</Th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 bg-white">
@@ -105,42 +168,47 @@ export default function Monitoring() {
                   </Td>
                   <Td className="text-slate-600">
                     {r.shiftName ?? '—'}
-                    {r.post && <div className="text-xs text-slate-400">{r.post}</div>}
+                    {r.post && <div className="text-xs text-slate-400">{r.post.replace(/\s*—\s*Area Parkiran/, '')}</div>}
                   </Td>
                   <Td>
                     <StatusBadge status={r.status} />
                     {r.status === 'ABSEN_SEKALI' && r.note && <div className="mt-1 text-xs text-violet-700">{r.note}</div>}
                     {r.status === 'ALFA' && r.note && <div className="mt-1 max-w-[14rem] text-xs text-rose-700">{r.note}</div>}
                     {isAdmin && ['TEPAT_WAKTU', 'TERLAMBAT', 'ABSEN_SEKALI'].includes(r.status) && (
-                      <Button variant="ghost" className="mt-1 !px-2 !py-0.5 text-xs text-rose-700" onClick={() => setMarkUser(r.user.id)}>
-                        Tandai tidak bekerja
-                      </Button>
+                      <div>
+                        <Button variant="ghost" className="mt-1 !px-2 !py-0.5 text-xs text-rose-700 ring-1 ring-rose-200" onClick={() => setMarkUser(r.user.id)}>
+                          Tandai tidak bekerja
+                        </Button>
+                      </div>
                     )}
                   </Td>
                   <Td>
-                    <SlotTime d={r} slot="MASUK" />
+                    <div className="space-y-0.5 text-xs">
+                      <div><span className="inline-block w-14 text-slate-400">Masuk</span><SlotTime d={r} slot="MASUK" /></div>
+                      {(r.break?.start || r.break?.end) && (
+                        <div className="flex items-start"><span className="inline-block w-14 shrink-0 text-slate-400">Istirahat</span><BreakCell d={r} /></div>
+                      )}
+                      <div><span className="inline-block w-14 text-slate-400">Pulang</span><SlotTime d={r} slot="PULANG" /></div>
+                    </div>
                   </Td>
-                  <Td>
-                    <BreakCell d={r} />
-                  </Td>
-                  <Td>
-                    <SlotTime d={r} slot="PULANG" />
-                  </Td>
-                  <Td>
+                  <Td className="text-right">
                     <a
+                      title={`WhatsApp ${r.user.phone}`}
                       className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-xs font-medium text-emerald-700 hover:bg-emerald-50"
                       href={`https://wa.me/${r.user.phone.replace(/^0/, '62').replace(/\D/g, '')}`}
                       target="_blank"
                       rel="noreferrer"
                     >
-                      <Icon name="phone" className="h-3.5 w-3.5" />
-                      {r.user.phone}
+                      <Icon name="phone" className="h-4 w-4" />
+                      <span className="hidden 2xl:inline">WhatsApp</span>
                     </a>
                   </Td>
                 </tr>
               ))}
             </tbody>
           </Table>
+          </div>
+          </>
         )}
       </Card>
       {isAdmin && data && (

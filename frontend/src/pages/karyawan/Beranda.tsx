@@ -9,7 +9,7 @@ import { useServerClock } from '../../lib/clock';
 import { addDays, fmtDate, greeting, shortDay, SLOT_LABEL } from '../../lib/format';
 
 interface ScheduleResponse {
-  schedules: { date: string; off: boolean; shift: { id: number; name: string; startTime: string; endTime: string } | null }[];
+  schedules: { date: string; off: boolean; post: string | null; postCode: string | null; shift: { id: number; name: string; startTime: string; endTime: string } | null }[];
   holidays: Holiday[];
 }
 
@@ -54,7 +54,8 @@ export default function BerandaKaryawan() {
 
   const [recap, sched, shifts, leaves, settings, docs] = data;
   const todayRecord = recap.days.find((d) => d.date === today);
-  const todayShiftRef = sched.schedules.find((s) => s.date === today)?.shift ?? null;
+  const todayRow = sched.schedules.find((s) => s.date === today);
+  const todayShiftRef = todayRow?.shift ?? null;
   const shift = todayShiftRef ? shifts.find((s) => s.id === todayShiftRef.id) : undefined;
   // Batas terlambat khusus shift (mis. Shift 1 sampai 09.00), selain itu toleransi umum
   const lateTolerance = shift?.lateToleranceMin ?? settings.lateToleranceMinutes;
@@ -106,6 +107,16 @@ export default function BerandaKaryawan() {
   const openSlot = slots.find((s) => s.state === 'open');
   const nextSlot = slots.find((s) => s.state === 'upcoming');
   const lastLeave = leaves[0];
+  const alfaToday = !!shift && todayRecord?.status === 'ALFA';
+  const masukSlot = shift?.slots.find((s) => s.type === 'MASUK');
+  const lateLimit = masukSlot ? toMin(masukSlot.windowEnd) + lateTolerance : null;
+  const hm = (m: number) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+  // Pos jaga hari ini; Koordinator menjaga pos pagi hanya sampai Shift 2 masuk
+  const isCoordinator = user?.role === 'KOORDINATOR';
+  const shift2Start = shifts.find((s) => s.code === 'SHIFT_2')?.startTime;
+  const postText = todayRow?.post
+    ? `${todayRow.post.replace(/\s*—\s*Area Parkiran/, '')}${todayRow.postCode ? ` (${todayRow.postCode})` : ''}${isCoordinator && shift2Start ? ` · sampai ${shift2Start}, lalu awasi semua pos` : ''}`
+    : null;
   const week = Array.from({ length: 7 }, (_, i) => addDays(today, i));
 
   let headline: string;
@@ -119,6 +130,11 @@ export default function BerandaKaryawan() {
   } else if (blocked && todayRecord) {
     headline = `Hari ini Anda tercatat ${todayRecord.status.charAt(0) + todayRecord.status.slice(1).toLowerCase()}`;
     detail = 'Tidak perlu absen hari ini.';
+  } else if (alfaToday) {
+    headline = 'Hari ini Anda tercatat ALFA';
+    detail = todayRecord?.note?.startsWith('Ditandai')
+      ? `${todayRecord.note}. Absen tidak bisa dilakukan hari ini. Hubungi Super Admin bila ada kekeliruan.`
+      : `Anda tidak absen masuk sampai batas terlambat${lateLimit !== null ? ` (${hm(lateLimit)} WIT)` : ''}. Absen pulang tidak bisa dilakukan dan status tetap Alfa. Bila ada kendala (mis. wajah tidak terbaca), segera lapor ke Koordinator.`;
   } else if (!shift) {
     headline = 'Tidak ada jadwal hari ini';
     detail = 'Cek menu Jadwal Shift untuk hari kerja berikutnya.';
@@ -172,10 +188,19 @@ export default function BerandaKaryawan() {
               </span>
             )}
           </div>
-          <h1 className="mt-4 text-2xl font-bold tracking-tight sm:text-3xl">{headline}</h1>
+          {postText && !offToday && (
+            <div className="mt-3 inline-flex max-w-full items-center gap-2 rounded-xl bg-white/10 px-3 py-2 text-sm ring-1 ring-white/15">
+              <Icon name="mapPin" className="h-4 w-4 shrink-0 text-brand-100" />
+              <span className="min-w-0">
+                <span className="text-brand-100/80">Pos jaga hari ini: </span>
+                <b>{postText}</b>
+              </span>
+            </div>
+          )}
+          <h1 className={cx('mt-4 text-2xl font-bold tracking-tight sm:text-3xl', alfaToday && 'text-rose-100')}>{headline}</h1>
           <p className="mt-1 text-sm text-brand-100/90">{detail}</p>
 
-          {slots.length > 0 && !blocked && (
+          {slots.length > 0 && !blocked && !alfaToday && (
             <div className={cx('mt-6 grid gap-2 sm:grid-cols-2', slots.length === 4 ? 'xl:grid-cols-4' : 'lg:grid-cols-3')}>
               {slots.map((s) => (
                 <div
@@ -216,14 +241,16 @@ export default function BerandaKaryawan() {
           )}
 
           <div className="mt-6 flex flex-wrap gap-2">
-            <Link
-              to="/absen"
-              className="inline-flex items-center gap-2 rounded-xl bg-white px-5 py-3 text-sm font-semibold text-brand-800 shadow-lg hover:bg-brand-50"
-            >
-              <Icon name="scan" className="h-5 w-5" />
-              Buka Halaman Absen
-            </Link>
-            {slots.some((s) => s.state === 'missed') && (
+            {!alfaToday && (
+              <Link
+                to="/absen"
+                className="inline-flex items-center gap-2 rounded-xl bg-white px-5 py-3 text-sm font-semibold text-brand-800 shadow-lg hover:bg-brand-50"
+              >
+                <Icon name="scan" className="h-5 w-5" />
+                Buka Halaman Absen
+              </Link>
+            )}
+            {(alfaToday || slots.some((s) => s.state === 'missed')) && (
               <Link to="/app/kendala" className="inline-flex items-center gap-2 rounded-xl bg-white/10 px-5 py-3 text-sm font-semibold ring-1 ring-white/20 hover:bg-white/15">
                 <Icon name="alert" className="h-5 w-5" />
                 Lapor Kendala
