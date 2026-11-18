@@ -18,6 +18,8 @@ import {
   ShiftChangeLog,
   TelegramLink,
   User,
+  EmployeeExit,
+  RosterRule,
   sequelize,
 } from '../models';
 import { applyCorrection } from '../services/correctionService';
@@ -26,7 +28,8 @@ import { buildRecap } from '../services/recapService';
 import { enrollWithDuplicateCheck, SimilarFace } from '../services/faceEnrollment';
 import { assertPinAvailable, hashPin, PIN_RE } from '../services/identity';
 import { ah, HttpError } from '../utils/http';
-import { DATE_RE, witNow } from '../utils/time';
+import { addDays, DATE_RE, witNow } from '../utils/time';
+import { Op } from 'sequelize';
 
 /** Panel Super Admin. */
 const router = Router();
@@ -117,8 +120,88 @@ async function assertShift(id: number) {
 router.get(
   '/users',
   ah(async (_req, res) => {
-    const [users, testIds] = await Promise.all([User.findAll({ order: [['role', 'ASC'], ['fullName', 'ASC']] }), getTestAccountIds()]);
-    res.json(users.map((u) => ({ ...u.toPublic(), testAccount: testIds.has(u.id) })));
+    const [users, testIds, exits] = await Promise.all([User.findAll({ order: [['role', 'ASC'], ['fullName', 'ASC']] }), getTestAccountIds(), EmployeeExit.findAll()]);
+    const nameOf = (id: number | null) => (id ? (users.find((x) => x.id === id)?.fullName ?? null) : null);
+    res.json(
+      users.map((u) => {
+        const ex = exits.find((e) => e.userId === u.id);
+        const replaced = exits.find((e) => e.replacedById === u.id);
+        return {
+          ...u.toPublic(),
+          testAccount: testIds.has(u.id),
+          exit: ex && !u.isActive ? { exitDate: ex.exitDate, reason: ex.reason, replacedBy: nameOf(ex.replacedById) } : null,
+          replaces: replaced ? nameOf(replaced.userId) : null,
+        };
+      }),
+    );
+  }),
+);
+
+/**
+ * Karyawan keluar: akun dinonaktifkan (riwayat absen, surat, upah tetap atas namanya), jadwal sesudah
+ * tanggal keluar dihapus. Bila ada pengganti, jadwal mulai tanggal masuk pengganti dipindahkan beserta posnya.
+ */
+router.post(
+  '/users/:id/exit',
+  ah(async (req, res) => {
+    const body = z
+      .object({
+        exitDate: z.string().regex(DATE_RE),
+        reason: z.string().trim().min(3, 'Tulis alasan keluar').max(300),
+        replacementId: z.number().int().positive().optional(),
+        startDate: z.string().regex(DATE_RE).optional(),
+        copyRules: z.boolean().default(false),
+      })
+      .parse(req.body);
+    const user = await loadEditableUser(Number(req.params.id));
+    if (!isAttendee(user.role)) throw new HttpError(400, 'Hanya untuk Karyawan Parkir dan Koordinator');
+    if (!user.isActive) throw new HttpError(400, `${user.fullName} sudah nonaktif`);
+    const today = witNow().date;
+    let replacement: User | null = null;
+    if (body.replacementId) {
+      replacement = await User.findByPk(body.replacementId);
+      if (!replacement || replacement.id === user.id || !replacement.isActive || !isAttendee(replacement.role)) throw new HttpError(400, 'Karyawan pengganti tidak valid');
+    }
+    const start = body.startDate ?? addDays(body.exitDate, 1);
+    if (replacement && start <= body.exitDate) throw new HttpError(400, 'Tanggal mulai pengganti harus setelah tanggal keluar');
+    const from = start > today ? start : today; // jadwal yang sudah lewat tidak diubah
+    const moved = await sequelize.transaction(async (transaction) => {
+      let n = 0;
+      if (replacement) {
+        const rows = await EmployeeSchedule.findAll({ where: { userId: user.id, date: { [Op.gte]: from } }, transaction });
+        if (rows.length) await EmployeeSchedule.destroy({ where: { userId: replacement.id, date: rows.map((r) => r.date) }, transaction });
+        for (const r of rows) await r.update({ userId: replacement.id }, { transaction });
+        n = rows.length;
+        if (body.copyRules) {
+          const rule = await RosterRule.findByPk(user.id, { transaction });
+          if (rule) {
+            // MariaDB mengembalikan kolom JSON sebagai teks; pastikan yang disalin berupa array
+            const arr = (v: unknown) => (typeof v === 'string' ? (JSON.parse(v) as number[]) : ((v as number[] | null) ?? []));
+            await RosterRule.upsert(
+              { userId: replacement.id, fixedShiftId: rule.fixedShiftId, offDays: arr(rule.offDays), noShift1Days: arr(rule.noShift1Days), noShift2Days: arr(rule.noShift2Days), noSiangDays: arr(rule.noSiangDays), active: rule.active, female: false },
+              { transaction },
+            );
+          }
+        }
+      }
+      // Sisa jadwal sesudah tanggal keluar (yang belum lewat) dihapus supaya roster tidak menghitung orang ini
+      const after = addDays(body.exitDate, 1);
+      await EmployeeSchedule.destroy({ where: { userId: user.id, date: { [Op.gte]: after > today ? after : today } }, transaction });
+      await user.update({ isActive: false }, { transaction });
+      await EmployeeExit.upsert({ userId: user.id, exitDate: body.exitDate, reason: body.reason, replacedById: replacement?.id ?? null, createdById: currentUser(req).id }, { transaction });
+      await ShiftChangeLog.create(
+        {
+          actorId: currentUser(req).id,
+          target: `Karyawan keluar: ${user.fullName}`,
+          before: { active: true },
+          after: { active: false, exitDate: body.exitDate, reason: body.reason, replacedBy: replacement?.fullName ?? null, movedSchedules: n },
+        },
+        { transaction },
+      );
+      return n;
+    });
+    await TelegramLink.destroy({ where: { userId: user.id } });
+    res.json({ moved, replacedBy: replacement?.fullName ?? null });
   }),
 );
 
@@ -191,6 +274,8 @@ router.put(
     if (isAttendee(body.role) && !user.faceEmbedding) {
       throw new HttpError(400, 'Daftarkan data wajah terlebih dahulu sebelum menjadikan Karyawan Parkir');
     }
+    // Diaktifkan kembali → catatan keluar dihapus
+    if (body.isActive && !user.isActive) await EmployeeExit.destroy({ where: { userId: user.id } });
     await user.update({
       fullName: body.fullName,
       nik: body.nik,

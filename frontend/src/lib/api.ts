@@ -22,6 +22,10 @@ export interface PublicUser {
   immutable: boolean;
   /** Akun uji coba: tidak ikut laporan, rekap upah, disiplin, monitoring & roster yang dibagikan */
   testAccount?: boolean;
+  /** Karyawan yang sudah keluar (akun nonaktif): tanggal, alasan, dan penggantinya */
+  exit?: { exitDate: string; reason: string; replacedBy: string | null } | null;
+  /** Nama karyawan lama yang digantikan akun ini */
+  replaces?: string | null;
 }
 
 export interface Shift {

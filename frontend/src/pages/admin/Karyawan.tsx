@@ -5,7 +5,8 @@ import { useFeedback } from '../../components/feedback';
 import { Icon } from '../../components/icons';
 import { Alert, Badge, Button, Card, Empty, Field, Input, Loading, Modal, PageHeader, PersonCell, SearchInput, Select, Table, Td, Textarea, Th } from '../../components/ui';
 import { api, ApiError, errMsg, PublicUser, Shift, SimilarFaceInfo } from '../../lib/api';
-import { ROLE_LABEL } from '../../lib/format';
+import { fmtDate, ROLE_LABEL, todayWIT, addDays } from '../../lib/format';
+import { cx } from '../../components/ui';
 
 type FormState = {
   fullName: string;
@@ -189,6 +190,10 @@ export default function Karyawan() {
   const [pinValue, setPinValue] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [q, setQ] = useState('');
+  const [filter, setFilter] = useState<'AKTIF' | 'NONAKTIF' | 'SEMUA'>('AKTIF');
+  const [exitFor, setExitFor] = useState<PublicUser | null>(null);
+  // Alur "Gantikan karyawan": data keluar disimpan dulu, akun lama dinonaktifkan setelah akun pengganti berhasil dibuat
+  const [pendingReplace, setPendingReplace] = useState<{ user: PublicUser; exitDate: string; reason: string; startDate: string; copyRules: boolean } | null>(null);
   const { toast, confirm } = useFeedback();
 
   if (loading && !data) return <Loading />;
@@ -198,9 +203,10 @@ export default function Karyawan() {
   // Semua yang wajib absen (Karyawan Parkir + Koordinator)
   const employees = users.filter((u) => u.role !== 'SUPER_ADMIN');
   const needle = q.trim().toLowerCase();
-  const visible = users.filter(
-    (u) => !needle || [u.fullName, u.nik, u.username].some((v) => v.toLowerCase().includes(needle)),
-  );
+  const countActive = users.filter((u) => u.isActive).length;
+  const visible = users
+    .filter((u) => filter === 'SEMUA' || (filter === 'AKTIF' ? u.isActive : !u.isActive))
+    .filter((u) => !needle || [u.fullName, u.nik, u.username].some((v) => v.toLowerCase().includes(needle)));
 
   const open = (m: NonNullable<typeof mode>) => {
     setFormError(null);
@@ -258,6 +264,21 @@ export default function Karyawan() {
       if (mode.type === 'create') {
         const { isActive: _ignored, ...payload } = form;
         result = await api.post('/admin/users', { ...payload, faceImages: needsFace ? face : undefined, similarOverride });
+        if (pendingReplace) {
+          const created = result as unknown as PublicUser;
+          const r = await api.post<{ moved: number }>(`/admin/users/${pendingReplace.user.id}/exit`, {
+            exitDate: pendingReplace.exitDate,
+            reason: pendingReplace.reason,
+            replacementId: created.id,
+            startDate: pendingReplace.startDate,
+            copyRules: pendingReplace.copyRules,
+          });
+          toast(`${created.fullName} menggantikan ${pendingReplace.user.fullName}. ${r.moved} jadwal roster dipindahkan; akun lama dinonaktifkan.`);
+          setPendingReplace(null);
+          setMode(null);
+          reload();
+          return;
+        }
       } else if (mode.type === 'edit') {
         await api.put(`/admin/users/${mode.user.id}`, form);
       } else {
@@ -342,6 +363,13 @@ export default function Karyawan() {
           <Badge className="bg-amber-100 text-amber-800">Akun uji coba</Badge>
         </span>
       )}
+      {u.exit && (
+        <span className="basis-full text-xs text-slate-500">
+          Keluar {fmtDate(u.exit.exitDate, false)} · {u.exit.reason}
+          {u.exit.replacedBy && <> · digantikan <b>{u.exit.replacedBy}</b></>}
+        </span>
+      )}
+      {u.isActive && u.replaces && <span className="basis-full text-xs text-slate-500">Menggantikan {u.replaces}</span>}
     </>
   );
   const FaceBadges = ({ u }: { u: PublicUser }) => (
@@ -384,6 +412,11 @@ export default function Karyawan() {
           </Button>
         </>
       )}
+      {u.role !== 'SUPER_ADMIN' && u.isActive && (
+        <Button variant="ghost" className="!px-2.5 !py-1 text-xs text-amber-700" onClick={() => setExitFor(u)}>
+          Keluar
+        </Button>
+      )}
       <Button variant="ghost" className="!px-2.5 !py-1 text-xs text-rose-600" onClick={() => remove(u)}>
         Hapus
       </Button>
@@ -403,8 +436,24 @@ export default function Karyawan() {
       />
       <Card>
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex gap-1 rounded-xl bg-slate-100 p-1">
+            {(
+              [
+                ['AKTIF', `Aktif (${countActive})`],
+                ['NONAKTIF', `Sudah keluar / nonaktif (${users.length - countActive})`],
+                ['SEMUA', 'Semua'],
+              ] as const
+            ).map(([k, label]) => (
+              <button
+                key={k}
+                onClick={() => setFilter(k)}
+                className={cx('whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-medium', filter === k ? 'bg-white text-slate-900 shadow-sm ring-1 ring-slate-200' : 'text-slate-500')}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
           <SearchInput value={q} onChange={setQ} placeholder="Cari nama, NIK, atau username…" className="w-full sm:w-72" />
-          <span className="text-sm text-slate-500">{visible.length} pengguna</span>
         </div>
         {visible.length === 0 ? (
           <Empty icon="search" title="Tidak ada pengguna yang cocok" />
@@ -466,10 +515,15 @@ export default function Karyawan() {
 
       <Modal
         open={!!mode}
-        onClose={() => setMode(null)}
+        onClose={() => {
+          setMode(null);
+          setPendingReplace(null);
+        }}
         title={
           mode?.type === 'create'
-            ? 'Tambah Pengguna'
+            ? pendingReplace
+              ? `Pengganti untuk ${pendingReplace.user.fullName}`
+              : 'Tambah Pengguna'
             : mode?.type === 'edit'
               ? 'Edit Pengguna'
               : mode?.type === 'pin'
@@ -479,6 +533,13 @@ export default function Karyawan() {
       >
         <form onSubmit={submit} className="space-y-3">
           {formError && <Alert>{formError}</Alert>}
+          {mode?.type === 'create' && pendingReplace && (
+            <Alert kind="info">
+              Isi data <b>karyawan baru</b>. Setelah disimpan, jadwal roster {pendingReplace.user.fullName} mulai <b>{fmtDate(pendingReplace.startDate, false)}</b> dipindahkan ke
+              karyawan baru ini, dan akun {pendingReplace.user.fullName} dinonaktifkan per {fmtDate(pendingReplace.exitDate, false)}. Riwayat absensinya tetap atas nama
+              {` ${pendingReplace.user.fullName}`}.
+            </Alert>
+          )}
           {mode?.type === 'pin' && (
             <>
               <p className="text-sm text-slate-600">
@@ -602,6 +663,114 @@ export default function Karyawan() {
           </Button>
         </form>
       </Modal>
+      {exitFor && (
+        <ExitModal
+          user={exitFor}
+          onClose={() => setExitFor(null)}
+          onDeactivated={() => {
+            setExitFor(null);
+            reload();
+          }}
+          onReplace={(p) => {
+            setExitFor(null);
+            setPendingReplace({ user: exitFor, ...p });
+            open({ type: 'create' });
+            setForm((f) => ({ ...f, role: exitFor.role as FormState['role'], defaultShiftId: exitFor.defaultShiftId ?? f.defaultShiftId }));
+          }}
+        />
+      )}
     </>
+  );
+}
+
+/** Karyawan keluar: nonaktifkan saja, atau lanjut membuat akun pengganti yang mewarisi jadwal roster. */
+function ExitModal({
+  user,
+  onClose,
+  onDeactivated,
+  onReplace,
+}: {
+  user: PublicUser;
+  onClose: () => void;
+  onDeactivated: () => void;
+  onReplace: (p: { exitDate: string; reason: string; startDate: string; copyRules: boolean }) => void;
+}) {
+  const { toast } = useFeedback();
+  const today = todayWIT();
+  const [exitDate, setExitDate] = useState(today);
+  const [reason, setReason] = useState('');
+  const [mode, setMode] = useState<'replace' | 'only'>('replace');
+  const [startDate, setStartDate] = useState(addDays(today, 1));
+  const [copyRules, setCopyRules] = useState(false);
+  const [saving, setSaving] = useState(false);
+  async function submit(e: FormEvent) {
+    e.preventDefault();
+    if (reason.trim().length < 3) return toast('Tulis alasan keluar', 'error');
+    if (mode === 'replace') {
+      if (startDate <= exitDate) return toast('Tanggal mulai pengganti harus setelah tanggal keluar', 'error');
+      return onReplace({ exitDate, reason: reason.trim(), startDate, copyRules });
+    }
+    setSaving(true);
+    try {
+      await api.post(`/admin/users/${user.id}/exit`, { exitDate, reason: reason.trim() });
+      toast(`${user.fullName} dinonaktifkan. Riwayatnya tetap tersimpan.`);
+      onDeactivated();
+    } catch (err) {
+      toast(errMsg(err), 'error');
+    } finally {
+      setSaving(false);
+    }
+  }
+  return (
+    <Modal open title={`Karyawan keluar · ${user.fullName}`} onClose={onClose}>
+      <form onSubmit={submit} className="space-y-4">
+        <p className="text-sm text-slate-600">
+          Akun tidak dihapus, hanya dinonaktifkan. Riwayat absen, surat, dan upah tetap atas nama <b>{user.fullName}</b>. Jadwal roster sesudah tanggal keluar dihapus.
+        </p>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Field label="Hari terakhir bekerja">
+            <Input type="date" value={exitDate} onChange={(e) => e.target.value && setExitDate(e.target.value)} />
+          </Field>
+          <Field label="Alasan keluar">
+            <Input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="mis. Mengundurkan diri" />
+          </Field>
+        </div>
+        <div className="space-y-2">
+          <label className={cx('flex cursor-pointer items-start gap-3 rounded-xl border p-3 text-sm', mode === 'replace' ? 'border-brand-300 bg-brand-50/60' : 'border-slate-200')}>
+            <input type="radio" className="mt-1" checked={mode === 'replace'} onChange={() => setMode('replace')} />
+            <span>
+              <b>Gantikan dengan karyawan baru</b>
+              <span className="block text-xs text-slate-500">Buat akun baru (data + wajah). Jadwal roster {user.fullName} mulai tanggal masuk pengganti, beserta posnya, dipindahkan ke akun baru.</span>
+            </span>
+          </label>
+          {mode === 'replace' && (
+            <div className="ml-7 grid gap-3 sm:grid-cols-2">
+              <Field label="Pengganti mulai bekerja">
+                <Input type="date" value={startDate} onChange={(e) => e.target.value && setStartDate(e.target.value)} />
+              </Field>
+              <label className="flex items-start gap-2 pt-6 text-xs text-slate-600">
+                <input type="checkbox" className="mt-0.5" checked={copyRules} onChange={(e) => setCopyRules(e.target.checked)} />
+                Salin aturan roster otomatis (hari Off, shift yang tidak bisa)
+              </label>
+            </div>
+          )}
+          <label className={cx('flex cursor-pointer items-start gap-3 rounded-xl border p-3 text-sm', mode === 'only' ? 'border-brand-300 bg-brand-50/60' : 'border-slate-200')}>
+            <input type="radio" className="mt-1" checked={mode === 'only'} onChange={() => setMode('only')} />
+            <span>
+              <b>Nonaktifkan saja</b>
+              <span className="block text-xs text-slate-500">Belum ada pengganti. Akun pengganti bisa dibuat nanti lewat Tambah Pengguna.</span>
+            </span>
+          </label>
+        </div>
+        <div className="flex justify-end gap-2">
+          <Button type="button" variant="secondary" onClick={onClose}>
+            Batal
+          </Button>
+          <Button type="submit" loading={saving}>
+            {mode === 'replace' ? 'Lanjut: isi data pengganti' : 'Nonaktifkan'}
+          </Button>
+        </div>
+      </form>
+    </Modal>
   );
 }

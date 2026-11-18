@@ -1053,4 +1053,26 @@ ReminderLog.init(
   { sequelize, tableName: 'reminder_logs', timestamps: false, indexes: [{ unique: true, fields: ['user_id', 'date', 'kind'] }, { fields: ['date'] }] },
 );
 
+// ───────────────────────────── Karyawan keluar & pengganti ─────────────────────────────
+/** Catatan karyawan yang keluar (akun dinonaktifkan, riwayat tetap utuh) dan siapa penggantinya. */
+export class EmployeeExit extends Model<InferAttributes<EmployeeExit>, InferCreationAttributes<EmployeeExit>> {
+  declare userId: number;
+  declare exitDate: string;
+  declare reason: string;
+  declare replacedById: number | null;
+  declare createdById: number;
+  declare createdAt: CreationOptional<Date>;
+}
+EmployeeExit.init(
+  {
+    userId: { type: DataTypes.INTEGER.UNSIGNED, primaryKey: true },
+    exitDate: { type: DataTypes.DATEONLY, allowNull: false },
+    reason: { type: DataTypes.STRING(300), allowNull: false },
+    replacedById: { type: DataTypes.INTEGER.UNSIGNED, allowNull: true },
+    createdById: { type: DataTypes.INTEGER.UNSIGNED, allowNull: false },
+    createdAt: DataTypes.DATE,
+  },
+  { sequelize, tableName: 'employee_exits', updatedAt: false },
+);
+
 export { sequelize };
