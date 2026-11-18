@@ -804,7 +804,7 @@ Incident.init(
 );
 
 // ───────────────────────────── Surat peringatan / panggilan (mangkir, PKWT Pasal 8) ─────────────────────────────
-export const LETTER_TYPES = ['PERINGATAN_1', 'PERINGATAN_2', 'PANGGILAN_1', 'PANGGILAN_2'] as const;
+export const LETTER_TYPES = ['PERINGATAN_1', 'PERINGATAN_2', 'PANGGILAN_1', 'PANGGILAN_2', 'PERINGATAN_3'] as const;
 export type LetterType = (typeof LETTER_TYPES)[number];
 /** Surat disiplin yang diterbitkan; tidak dihapus, hanya dibatalkan dengan alasan. */
 export class DisciplineLetter extends Model<InferAttributes<DisciplineLetter>, InferCreationAttributes<DisciplineLetter>> {

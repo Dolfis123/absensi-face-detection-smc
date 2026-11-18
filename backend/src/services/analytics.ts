@@ -87,7 +87,8 @@ export async function buildAnalytics(days: number) {
         const what = (LETTER_TITLE as Record<string, string>)[r.recommendation] ?? 'keputusan manajemen';
         return { userId: r.user.id, fullName: r.user.fullName, level: 'ACTION' as const, text: `Perlu ${what} · Alfa bulan ini ${r.monthCount}×${r.streak >= 2 ? `, ${r.streak} hari berturut-turut` : ''}` };
       }
-      if (r.monthCount === 2) return { userId: r.user.id, fullName: r.user.fullName, level: 'SOON' as const, text: 'Sudah 2× Alfa bulan ini. Sekali lagi = Surat Peringatan Kedua.' };
+      const next = ([[3, 'Surat Peringatan Pertama'], [5, 'Surat Peringatan Kedua'], [8, 'Surat Peringatan Ketiga']] as const).find(([n]) => r.monthCount === n - 1);
+      if (next) return { userId: r.user.id, fullName: r.user.fullName, level: 'SOON' as const, text: `Sudah ${r.monthCount}× Alfa bulan ini. Sekali lagi = ${next[1]}.` };
       if (r.streak >= 3) return { userId: r.user.id, fullName: r.user.fullName, level: 'SOON' as const, text: `Alfa ${r.streak} hari berturut-turut. Hari ke-5 = surat panggilan.` };
       return null;
     })

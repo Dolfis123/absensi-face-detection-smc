@@ -50,7 +50,7 @@ export async function sendLetterPdf(res: Response, l: DisciplineLetter) {
     DocumentReceipt.findOne({ where: { kind: 'LETTER', refId: l.id, userId: l.userId, receivedAt: { [Op.ne]: null } } }),
   ]);
   // Surat yang dirujuk: Peringatan Pertama untuk SP-2, Panggilan Pertama untuk Panggilan Kedua
-  const prevType = l.type === 'PERINGATAN_2' ? 'PERINGATAN_1' : l.type === 'PANGGILAN_2' ? 'PANGGILAN_1' : null;
+  const prevType = l.type === 'PERINGATAN_2' ? 'PERINGATAN_1' : l.type === 'PERINGATAN_3' ? 'PERINGATAN_2' : l.type === 'PANGGILAN_2' ? 'PANGGILAN_1' : null;
   const prev = prevType
     ? await DisciplineLetter.findOne({
         where: { userId: l.userId, type: prevType, voidedAt: null, letterDate: { [Op.lte]: l.letterDate }, id: { [Op.ne]: l.id } },

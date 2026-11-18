@@ -95,7 +95,9 @@ export function sendDisciplinePdf(res: Response, L: LetterData, s: DisciplineSet
   const prevText = L.previous ? `Nomor ${L.previous.number} tanggal ${fmtLongDate(L.previous.letterDate)}` : null;
 
   // ── Isi menurut jenis surat ──
-  if (L.type === 'PERINGATAN_1' || L.type === 'PERINGATAN_2') {
+  if (L.type.startsWith('PERINGATAN')) {
+    const ORDINAL = { PERINGATAN_1: 'PERTAMA', PERINGATAN_2: 'KEDUA', PERINGATAN_3: 'KETIGA' } as Record<string, string>;
+    const PREV = { PERINGATAN_2: 'Surat Peringatan Pertama', PERINGATAN_3: 'Surat Peringatan Kedua' } as Record<string, string>;
     para(
       `Berdasarkan catatan absensi online SMC-FaceAttend, Saudara tercatat tidak masuk bekerja tanpa keterangan yang sah (mangkir) sebanyak ${countText(n)} hari kerja sesuai jadwal tugas, dengan rincian sebagai berikut:`,
     );
@@ -103,7 +105,7 @@ export function sendDisciplinePdf(res: Response, L: LetterData, s: DisciplineSet
     para(
       L.type === 'PERINGATAN_1'
         ? 'Ketidakhadiran tersebut melanggar kewajiban hadir sesuai roster dan kewajiban mengajukan izin melalui aplikasi sebagaimana diatur dalam Perjanjian Kerja Waktu Tertentu (PKWT) Pasal 4 dan Pasal 8 serta Standar Operasional Prosedur (SOP) Parkiran BAB IV dan BAB V. Sesuai PKWT Pasal 8, Perusahaan dengan ini memberikan PERINGATAN PERTAMA kepada Saudara.'
-        : `Ketidakhadiran tersebut melanggar kewajiban hadir sesuai roster dan kewajiban mengajukan izin melalui aplikasi sebagaimana diatur dalam Perjanjian Kerja Waktu Tertentu (PKWT) Pasal 4 dan Pasal 8 serta Standar Operasional Prosedur (SOP) Parkiran BAB IV dan BAB V${prevText ? `, dan terjadi setelah Saudara menerima Surat Peringatan Pertama ${prevText}` : ''}. Sesuai PKWT Pasal 8, Perusahaan dengan ini memberikan PERINGATAN KEDUA secara tertulis kepada Saudara.`,
+        : `Ketidakhadiran tersebut melanggar kewajiban hadir sesuai roster dan kewajiban mengajukan izin melalui aplikasi sebagaimana diatur dalam Perjanjian Kerja Waktu Tertentu (PKWT) Pasal 4 dan Pasal 8 serta Standar Operasional Prosedur (SOP) Parkiran BAB IV dan BAB V${prevText ? `, dan terjadi setelah Saudara menerima ${PREV[L.type]} ${prevText}` : ''}. Sesuai PKWT Pasal 8, Perusahaan dengan ini memberikan PERINGATAN ${ORDINAL[L.type]} secara tertulis kepada Saudara.`,
     );
     para('Sehubungan dengan peringatan ini, Saudara diminta untuk:', { align: 'left' });
     numbered(doc, M, W, [
@@ -111,8 +113,10 @@ export function sendDisciplinePdf(res: Response, L: LetterData, s: DisciplineSet
       'Mengajukan izin, sakit, atau cuti melalui aplikasi sebelum tidak masuk bekerja, disertai bukti pendukung yang sah.',
       'Memahami bahwa sesuai prinsip no work no pay (PKWT Pasal 8), upah untuk hari mangkir tidak dibayarkan dan dihitung proporsional: Upah Pokok ÷ 25 × jumlah hari mangkir.',
       L.type === 'PERINGATAN_1'
-        ? 'Memperhatikan bahwa apabila mangkir terulang, Perusahaan akan memberikan Surat Peringatan Kedua secara tertulis sesuai PKWT Pasal 8.'
-        : 'Memperhatikan bahwa mangkir 5 (lima) hari kerja berturut-turut atau lebih akan ditindaklanjuti dengan pemanggilan secara tertulis, dan apabila tidak dapat memberikan alasan yang sah, Saudara dikualifikasikan mengundurkan diri sesuai PKWT Pasal 8.',
+        ? 'Memperhatikan bahwa apabila mangkir mencapai 5 (lima) kali dalam satu bulan, Perusahaan akan memberikan Surat Peringatan Kedua secara tertulis.'
+        : L.type === 'PERINGATAN_2'
+          ? 'Memperhatikan bahwa apabila mangkir mencapai 8 (delapan) kali dalam satu bulan, Perusahaan akan memberikan Surat Peringatan Ketiga; dan mangkir 5 (lima) hari kerja berturut-turut atau lebih akan ditindaklanjuti dengan pemanggilan secara tertulis sesuai PKWT Pasal 8.'
+          : 'Memperhatikan bahwa Surat Peringatan Ketiga ini merupakan peringatan terakhir. Apabila mangkir kembali terulang, Perusahaan akan menyerahkan tindak lanjut kepada Manajemen sesuai Peraturan Perusahaan dan peraturan perundang-undangan ketenagakerjaan yang berlaku, termasuk kemungkinan pengakhiran hubungan kerja.',
     ]);
   } else {
     para(

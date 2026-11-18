@@ -11,6 +11,19 @@ import { addDays, hhmmToMinutes, minutesToHhmm, witNow } from './utils/time';
  */
 const MIGRATIONS: { id: string; up: () => Promise<void> }[] = [
   {
+    // Surat Peringatan Ketiga (Alfa 8× sebulan): tambah nilai enum di discipline_letters. Data lain tidak disentuh.
+    id: '2026-11-18-surat-peringatan-ketiga',
+    async up() {
+      const rows = await sequelize.query<{ COLUMN_TYPE: string }>(
+        "SELECT COLUMN_TYPE FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'discipline_letters' AND COLUMN_NAME = 'type'",
+        { type: QueryTypes.SELECT },
+      );
+      if (rows[0] && !rows[0].COLUMN_TYPE.includes("'PERINGATAN_3'")) {
+        await sequelize.query("ALTER TABLE `discipline_letters` MODIFY `type` ENUM('PERINGATAN_1','PERINGATAN_2','PANGGILAN_1','PANGGILAN_2','PERINGATAN_3') NOT NULL");
+      }
+    },
+  },
+  {
     // Paling awal juga: migrasi lama membaca tabel shifts lewat model, jadi kolom barunya harus ada lebih dulu.
     // Toleransi terlambat per shift: Shift 1 & Shift Penuh sampai 09.00 (60 menit), Shift Siang sampai 14.30
     // dan Shift 2 sampai 16.30 (30 menit). Tidak menyentuh tabel users / data wajah.

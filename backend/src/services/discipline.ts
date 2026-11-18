@@ -1,8 +1,9 @@
 /**
- * Disiplin kehadiran (mangkir) sesuai PKWT Pasal 8:
- *  - mangkir 1–2 hari kerja → Peringatan Pertama (teguran)
- *  - mangkir 3–4 hari kerja → Peringatan Kedua secara tertulis
- *  - mangkir ≥ 5 hari kerja berturut-turut → dipanggil 2 kali secara tertulis; bila tetap tanpa
+ * Disiplin kehadiran (mangkir), dihitung per bulan kalender (ketentuan perusahaan):
+ *  - Alfa 3× dalam sebulan → Surat Peringatan Pertama
+ *  - Alfa 5× dalam sebulan → Surat Peringatan Kedua
+ *  - Alfa 8× dalam sebulan → Surat Peringatan Ketiga
+ *  - mangkir ≥ 5 hari kerja berturut-turut (PKWT Pasal 8) → dipanggil 2 kali secara tertulis; bila tetap tanpa
  *    alasan yang sah, dikualifikasikan mengundurkan diri (keputusan Manajemen, di luar sistem)
  * Hitungan memakai hari kerja terjadwal: hari Off, hari libur, dan hari tanpa jadwal dilewati.
  */
@@ -47,6 +48,11 @@ export interface IssuedLetter {
 
 export type Recommendation = LetterType | 'KEPUTUSAN_MANAJEMEN' | null;
 
+/** Jumlah Alfa dalam satu bulan yang membuat surat peringatan perlu diterbitkan. */
+export const WARNING_AT = { PERINGATAN_1: 3, PERINGATAN_2: 5, PERINGATAN_3: 8 } as const;
+export type WarningType = keyof typeof WARNING_AT;
+const RANK: Record<WarningType, number> = { PERINGATAN_1: 1, PERINGATAN_2: 2, PERINGATAN_3: 3 };
+
 /**
  * Saran tindakan berikutnya. Surat yang sudah terbit untuk kejadian yang sama tidak disarankan lagi:
  * panggilan dikaitkan ke rangkaian mangkir yang sama, peringatan ke bulan yang sama.
@@ -61,15 +67,19 @@ export function recommend(a: AlfaAnalysis, letters: IssuedLetter[], month: strin
     if (!p2) return p1.reportDate && today < p1.reportDate ? null : 'PANGGILAN_2';
     return 'KEPUTUSAN_MANAJEMEN';
   }
+  // Surat peringatan tertinggi yang sudah terbit bulan ini; surat yang sama / lebih rendah tidak disarankan lagi
   const thisMonth = letters.filter((l) => l.letterDate.startsWith(month));
-  if (a.monthCount >= 3 && !thisMonth.some((l) => l.type === 'PERINGATAN_2' || l.type.startsWith('PANGGILAN'))) return 'PERINGATAN_2';
-  if (a.monthCount >= 1 && !thisMonth.length) return 'PERINGATAN_1';
+  const issued = Math.max(0, ...thisMonth.map((l) => (l.type in RANK ? RANK[l.type as WarningType] : 0)));
+  for (const t of ['PERINGATAN_3', 'PERINGATAN_2', 'PERINGATAN_1'] as const) {
+    if (a.monthCount >= WARNING_AT[t]) return RANK[t] > issued ? t : null;
+  }
   return null;
 }
 
 export const LETTER_TITLE: Record<LetterType, string> = {
   PERINGATAN_1: 'Surat Peringatan Pertama',
   PERINGATAN_2: 'Surat Peringatan Kedua',
+  PERINGATAN_3: 'Surat Peringatan Ketiga',
   PANGGILAN_1: 'Surat Panggilan Pertama',
   PANGGILAN_2: 'Surat Panggilan Kedua',
 };

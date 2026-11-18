@@ -8,17 +8,19 @@ import { useAuth } from '../../lib/auth';
 import { addDays, fmtDate, todayWIT } from '../../lib/format';
 import { Tabs } from '../parkir/shared';
 
-type LetterType = 'PERINGATAN_1' | 'PERINGATAN_2' | 'PANGGILAN_1' | 'PANGGILAN_2';
+type LetterType = 'PERINGATAN_1' | 'PERINGATAN_2' | 'PERINGATAN_3' | 'PANGGILAN_1' | 'PANGGILAN_2';
 const TITLE: Record<LetterType, string> = {
   PERINGATAN_1: 'Surat Peringatan Pertama',
   PERINGATAN_2: 'Surat Peringatan Kedua',
+  PERINGATAN_3: 'Surat Peringatan Ketiga',
   PANGGILAN_1: 'Surat Panggilan Pertama',
   PANGGILAN_2: 'Surat Panggilan Kedua',
 };
-const SHORT: Record<LetterType, string> = { PERINGATAN_1: 'Peringatan I', PERINGATAN_2: 'Peringatan II', PANGGILAN_1: 'Panggilan I', PANGGILAN_2: 'Panggilan II' };
+const SHORT: Record<LetterType, string> = { PERINGATAN_1: 'Peringatan I', PERINGATAN_2: 'Peringatan II', PERINGATAN_3: 'Peringatan III', PANGGILAN_1: 'Panggilan I', PANGGILAN_2: 'Panggilan II' };
 const REC_CLS: Record<string, string> = {
   PERINGATAN_1: 'bg-amber-100 text-amber-800',
   PERINGATAN_2: 'bg-orange-100 text-orange-800',
+  PERINGATAN_3: 'bg-red-100 text-red-800',
   PANGGILAN_1: 'bg-rose-100 text-rose-800',
   PANGGILAN_2: 'bg-rose-200 text-rose-900',
   KEPUTUSAN_MANAJEMEN: 'bg-slate-800 text-white',
@@ -89,9 +91,9 @@ function Tindakan() {
     <>
       <div className="mb-4">
         <Alert kind="info">
-          Ketentuan PKWT Pasal 8 (dihitung per hari kerja terjadwal; hari Off dan libur dilewati): mangkir <b>1–2 hari</b> → Peringatan Pertama,{' '}
-          <b>3–4 hari</b> → Peringatan Kedua tertulis, <b>≥ 5 hari berturut-turut</b> → dipanggil 2 kali secara tertulis. Upah hari mangkir tidak dibayarkan (no
-          work no pay).
+          Ketentuan surat peringatan (Alfa dihitung per bulan, hanya hari kerja terjadwal; hari Off dan libur dilewati): <b>3× Alfa</b> → Surat Peringatan Pertama,{' '}
+          <b>5× Alfa</b> → Surat Peringatan Kedua, <b>8× Alfa</b> → Surat Peringatan Ketiga. <b>5 hari berturut-turut</b> → dipanggil 2 kali secara tertulis (PKWT
+          Pasal 8). Upah hari mangkir tetap tidak dibayarkan (no work no pay).
         </Alert>
       </div>
       <Card title={`Karyawan tercatat Alfa · ${data.needAction} perlu tindakan`} subtitle="Data 45 hari terakhir dari absensi online; diperbarui setiap halaman dibuka">

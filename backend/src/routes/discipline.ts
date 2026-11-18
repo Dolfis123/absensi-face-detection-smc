@@ -10,6 +10,8 @@ import {
   LETTER_TITLE,
   letterNumber,
   recommend,
+  WARNING_AT,
+  WarningType,
 } from '../services/discipline';
 import { receiptsFor, sendLetterPdf } from '../services/receipts';
 import { buildRecap } from '../services/recapService';
@@ -109,6 +111,11 @@ router.post(
     const alfaDates = isCall ? a.streakDates : a.monthDates;
     if (alfaDates.length === 0) throw new HttpError(409, `${user.fullName} tidak tercatat mangkir${isCall ? ' berturut-turut' : ' bulan ini'} sampai ${letterDate}`);
     if (isCall && a.streak < 5) throw new HttpError(409, `Surat panggilan untuk mangkir ≥ 5 hari kerja berturut-turut (sekarang ${a.streak} hari)`);
+    // Surat peringatan baru boleh terbit setelah Alfa mencapai batasnya dalam bulan itu (3× / 5× / 8×)
+    if (!isCall) {
+      const need = WARNING_AT[body.type as WarningType];
+      if (a.monthCount < need) throw new HttpError(409, `${LETTER_TITLE[body.type]} diterbitkan setelah Alfa ${need}× dalam sebulan (${user.fullName} baru ${a.monthCount}× bulan ini)`);
+    }
     if (body.type === 'PANGGILAN_2') {
       const p1 = await DisciplineLetter.findOne({ where: { userId: user.id, type: 'PANGGILAN_1', voidedAt: null, letterDate: { [Op.gte]: a.streakDates[0] } } });
       if (!p1) throw new HttpError(409, 'Terbitkan Surat Panggilan Pertama lebih dulu untuk rangkaian mangkir ini');
