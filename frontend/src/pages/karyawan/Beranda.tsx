@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom';
 import { RequestBadge, StatusBadge, SummaryGrid, useLoad } from '../../components/attendance';
+import { InstallApp, TelegramConnect } from '../../components/AppExtras';
 import { Icon } from '../../components/icons';
 import { Alert, Card, cx, Empty, Skeleton } from '../../components/ui';
 import { api, EmployeeRecap, Holiday, LeaveRequest, Shift, SlotType } from '../../lib/api';
@@ -166,6 +167,8 @@ export default function BerandaKaryawan() {
           <Icon name="chevronRight" className="h-4 w-4" />
         </Link>
       )}
+      <InstallApp />
+      <TelegramConnect />
       <section className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-brand-700 via-brand-800 to-brand-950 p-5 text-white shadow-pop sm:p-7">
         <div className="pointer-events-none absolute -right-16 -top-16 h-56 w-56 rounded-full bg-brand-400/20 blur-2xl" />
         <div className="relative">

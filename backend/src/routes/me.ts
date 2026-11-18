@@ -4,13 +4,14 @@ import { Op } from 'sequelize';
 import { z } from 'zod';
 import { currentUser, requireRole } from '../middleware/auth';
 import { leaveAttachmentUpload } from '../middleware/upload';
-import { AttendanceIssue, DisciplineLetter, DocumentReceipt, EmployeeSchedule, Holiday, LEAVE_TYPES, LeaveRequest, PayrollPublication, Shift } from '../models';
+import { AttendanceIssue, DisciplineLetter, DocumentReceipt, EmployeeSchedule, TelegramLink, Holiday, LEAVE_TYPES, LeaveRequest, PayrollPublication, Shift } from '../models';
 import { LETTER_TITLE } from '../services/discipline';
 import type { PayRow } from '../services/payroll';
 import { PayrollMeta, sendPayrollPdf } from '../services/payrollPdf';
 import { fmtMonth } from '../services/pdfReport';
 import { markOpened, markReceived, sendLetterPdf } from '../services/receipts';
 import { getPosts, postLabel } from '../services/placement';
+import { botConfigured, createLinkUrl, sendTo } from '../services/telegramBot';
 import { buildRecap } from '../services/recapService';
 import { ah, HttpError } from '../utils/http';
 import { addDays, DATE_RE, MONTH_RE, monthRange, witNow } from '../utils/time';
@@ -235,6 +236,35 @@ router.post(
     const { p, row } = await ownSlip(req);
     const r = await markReceived('SLIP', p.id, row.user.id, p.version, req.get('user-agent'));
     res.json({ receivedAt: r.receivedAt });
+  }),
+);
+
+// ─────────────── Telegram pribadi (pengingat shift) ───────────────
+router.get(
+  '/telegram',
+  ah(async (req, res) => {
+    const link = await TelegramLink.findByPk(currentUser(req).id);
+    res.json({ configured: botConfigured(), linked: !!link, chatName: link?.chatName ?? null });
+  }),
+);
+
+router.post(
+  '/telegram/link',
+  ah(async (req, res) => {
+    if (!botConfigured()) throw new HttpError(400, 'Telegram belum dipasang oleh Super Admin');
+    res.json({ url: await createLinkUrl(currentUser(req).id) });
+  }),
+);
+
+router.delete(
+  '/telegram',
+  ah(async (req, res) => {
+    const link = await TelegramLink.findByPk(currentUser(req).id);
+    if (link) {
+      await sendTo(link.chatId, '🔕 Sambungan ke SMC-FaceAttend diputus dari aplikasi. Anda tidak akan menerima pengingat lagi.');
+      await link.destroy();
+    }
+    res.status(204).end();
   }),
 );
 

@@ -72,7 +72,7 @@ export const NAV_GROUPS: Record<Role, NavGroup[]> = {
         // { to: '/app/roster', label: 'Roster Shift', icon: 'calendar' },
       ],
     },
-    { title: 'Laporan', items: [{ to: '/app/laporan', label: 'Rekap & Unduh', icon: 'download' }] },
+    { title: 'Laporan', items: [{ to: '/app/laporan', label: 'Rekap & Unduh', icon: 'download' }, { to: '/app/analisis', label: 'Analisis Kehadiran', icon: 'chart' }] },
   ],
   SUPER_ADMIN: [
     {
@@ -106,6 +106,7 @@ export const NAV_GROUPS: Record<Role, NavGroup[]> = {
         { to: '/app/pengaturan-shift', label: 'Pengaturan Shift', icon: 'clock' },
         { to: '/app/geofence', label: 'Geofence Pos', icon: 'mapPin' },
         { to: '/app/laporan', label: 'Laporan', icon: 'download' },
+        { to: '/app/analisis', label: 'Analisis Kehadiran', icon: 'chart' },
         { to: '/app/upah', label: 'Rekap Upah', icon: 'fileText' },
         { to: '/app/identitas', label: 'Identitas & Kop Surat', icon: 'shield' },
         { to: '/app/sistem', label: 'Kesehatan Sistem', icon: 'activity' },

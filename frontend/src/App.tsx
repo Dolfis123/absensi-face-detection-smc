@@ -28,6 +28,7 @@ import Kendala from './pages/karyawan/Kendala';
 import Rekap from './pages/karyawan/Rekap';
 import BerandaPengawas from './pages/shared/Beranda';
 import Laporan from './pages/shared/Laporan';
+import Analisis from './pages/shared/Analisis';
 import Monitoring from './pages/shared/Monitoring';
 import ReviewIzin from './pages/shared/ReviewIzin';
 import ReviewKendala from './pages/shared/ReviewKendala';
@@ -77,6 +78,7 @@ export default function App() {
         <Route path="kendala" element={<Guard roles={EMPLOYEE}><Kendala /></Guard>} />
         <Route path="monitoring" element={<Guard roles={REVIEWERS}><Monitoring /></Guard>} />
         <Route path="laporan" element={<Guard roles={REVIEWERS}><Laporan /></Guard>} />
+        <Route path="analisis" element={<Guard roles={REVIEWERS}><Analisis /></Guard>} />
         <Route path="review-izin" element={<Guard roles={REVIEWERS}><ReviewIzin /></Guard>} />
         <Route path="review-kendala" element={<Guard roles={REVIEWERS}><ReviewKendala /></Guard>} />
         <Route path="disiplin" element={<Guard roles={REVIEWERS}><Disiplin /></Guard>} />

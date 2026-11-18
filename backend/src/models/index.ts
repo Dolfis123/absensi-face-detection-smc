@@ -1016,4 +1016,41 @@ SystemAlert.init(
   { sequelize, tableName: 'system_alerts', timestamps: false, indexes: [{ fields: ['key', 'active'] }, { fields: ['first_at'] }] },
 );
 
+// ───────────────────────────── Telegram petugas & pengingat ─────────────────────────────
+/** Chat Telegram pribadi milik petugas (disambungkan sendiri lewat tombol di aplikasi). */
+export class TelegramLink extends Model<InferAttributes<TelegramLink>, InferCreationAttributes<TelegramLink>> {
+  declare userId: number;
+  declare chatId: string;
+  declare chatName: string;
+  declare linkedAt: Date;
+}
+TelegramLink.init(
+  {
+    userId: { type: DataTypes.INTEGER.UNSIGNED, primaryKey: true },
+    chatId: { type: DataTypes.STRING(24), allowNull: false },
+    chatName: { type: DataTypes.STRING(120), allowNull: false },
+    linkedAt: { type: DataTypes.DATE, allowNull: false },
+  },
+  { sequelize, tableName: 'telegram_links', timestamps: false },
+);
+
+/** Catatan pengingat yang sudah dikirim (supaya tidak terkirim dua kali). */
+export class ReminderLog extends Model<InferAttributes<ReminderLog>, InferCreationAttributes<ReminderLog>> {
+  declare id: CreationOptional<number>;
+  declare userId: number;
+  declare date: string;
+  declare kind: string;
+  declare sentAt: Date;
+}
+ReminderLog.init(
+  {
+    id: { type: DataTypes.INTEGER.UNSIGNED, autoIncrement: true, primaryKey: true },
+    userId: { type: DataTypes.INTEGER.UNSIGNED, allowNull: false },
+    date: { type: DataTypes.DATEONLY, allowNull: false },
+    kind: { type: DataTypes.STRING(20), allowNull: false },
+    sentAt: { type: DataTypes.DATE, allowNull: false },
+  },
+  { sequelize, tableName: 'reminder_logs', timestamps: false, indexes: [{ unique: true, fields: ['user_id', 'date', 'kind'] }, { fields: ['date'] }] },
+);
+
 export { sequelize };

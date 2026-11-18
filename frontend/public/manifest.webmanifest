@@ -1,0 +1,21 @@
+{
+  "name": "SMC-FaceAttend · Absensi Pos Parkir",
+  "short_name": "SMC Absen",
+  "description": "Absensi wajah, jadwal, dan rekap petugas parkir Mall Sorong Modern City",
+  "lang": "id",
+  "start_url": "/app",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0c2b52",
+  "theme_color": "#0c2b52",
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "Absen Sekarang", "short_name": "Absen", "url": "/absen", "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }] },
+    { "name": "Beranda", "url": "/app/beranda", "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }] }
+  ]
+}

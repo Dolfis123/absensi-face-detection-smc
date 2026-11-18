@@ -3,6 +3,7 @@ import { useLoad } from '../../components/attendance';
 import { useFeedback } from '../../components/feedback';
 import { Alert, Badge, Button, Card, Empty, Loading, PageHeader, Table, Td, Th } from '../../components/ui';
 import { api, errMsg } from '../../lib/api';
+import { NotifyCard } from './NotifyCard';
 
 type Level = 'CRITICAL' | 'WARNING' | 'INFO';
 interface SysAlert {
@@ -207,6 +208,8 @@ export default function Sistem() {
           )}
         </Card>
       </div>
+
+      <NotifyCard />
 
       <Card title="Riwayat peringatan" className="mt-4">
         {data.history.length === 0 ? (

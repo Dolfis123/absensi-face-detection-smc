@@ -16,6 +16,7 @@ import {
   SLOT_TYPES,
   Shift,
   ShiftChangeLog,
+  TelegramLink,
   User,
   sequelize,
 } from '../models';
@@ -265,6 +266,7 @@ router.delete(
     }
     await sequelize.transaction(async (transaction) => {
       await EmployeeSchedule.destroy({ where: { userId: user.id }, transaction });
+      await TelegramLink.destroy({ where: { userId: user.id }, transaction });
       await user.destroy({ transaction });
     });
     res.status(204).end();

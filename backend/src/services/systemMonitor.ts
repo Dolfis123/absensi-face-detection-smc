@@ -13,6 +13,7 @@ import { env } from '../config/env';
 import { AlertLevel, AppSetting, AttendanceIssue, DisciplineLetter, DocumentReceipt, LeaveRequest, SystemAlert, User } from '../models';
 import { overview as disciplineOverview } from '../routes/discipline';
 import { LETTER_TITLE } from './discipline';
+import { pollerActive, pollOnce, seenChats } from './telegramBot';
 import { fmtLongDate } from './pdfReport';
 import { buildRecap } from './recapService';
 import { addDays, witNow } from '../utils/time';
@@ -73,6 +74,11 @@ export async function sendTelegram(text: string): Promise<number> {
 /** Chat yang pernah mengirim pesan ke bot (untuk memilih penerima di aplikasi). */
 export async function discoverChats(): Promise<AlertChat[]> {
   if (!telegramConfigured()) throw new Error('TELEGRAM_BOT_TOKEN belum diisi di backend/.env');
+  // Bila pembaca pesan bot aktif, pesan sudah diambil di sana: pakai daftar chat yang pernah menyapa bot
+  if (pollerActive()) {
+    await pollOnce().catch(() => undefined);
+    return (await seenChats()).map(({ id, name }) => ({ id, name }));
+  }
   type Upd = { message?: { chat: { id: number; title?: string; first_name?: string; last_name?: string; username?: string } } };
   const updates = await tg<Upd[]>('getUpdates');
   const seen = new Map<string, AlertChat>();

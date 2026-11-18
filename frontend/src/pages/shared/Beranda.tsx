@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { StatusBadge, useLoad } from '../../components/attendance';
 import { Icon, IconName } from '../../components/icons';
 import { TrendChart, TrendPoint } from '../../components/TrendChart';
+import { InstallApp, TelegramConnect } from '../../components/AppExtras';
 import { Alert, Avatar, Badge, Card, Empty, PageHeader, PersonCell, Skeleton, StatCard } from '../../components/ui';
 import { api, AttendanceIssue, DayRecord, EmployeeRecap, LeaveRequest, PublicUser, SlotType } from '../../lib/api';
 import { useAuth } from '../../lib/auth';
@@ -117,6 +118,12 @@ export default function BerandaPengawas() {
   return (
     <>
       {header}
+
+      <div className="mb-4 space-y-2 empty:hidden">
+        <InstallApp />
+        {/* Koordinator juga absen, jadi ikut bisa menerima pengingat shift */}
+        {user?.role === 'KOORDINATOR' && <TelegramConnect />}
+      </div>
 
       <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
         <StatCard

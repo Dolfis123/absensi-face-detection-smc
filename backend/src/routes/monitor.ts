@@ -10,6 +10,7 @@ import { getPosts, postLabel } from '../services/placement';
 import { sendCsv } from '../services/csv';
 import { dayNotes, fmtLongDate, fmtMonth, sendAttendancePdf } from '../services/pdfReport';
 import { buildRecap } from '../services/recapService';
+import { buildAnalytics } from '../services/analytics';
 import { getGlobalLateTolerance, shiftLateTolerances } from '../services/settings';
 import { ah, HttpError } from '../utils/http';
 import { DATE_RE, MONTH_RE, monthRange, witNow } from '../utils/time';
@@ -179,6 +180,16 @@ router.get(
         s.hariKerja ? Math.round((s.hadir / s.hariKerja) * 100) : '',
       ]),
     );
+  }),
+);
+
+// ─── Analisis kehadiran ───
+router.get(
+  '/analytics',
+  reviewers,
+  ah(async (req, res) => {
+    const days = z.coerce.number().int().refine((n) => [7, 14, 30, 60, 90].includes(n), 'Pilih 7, 14, 30, 60, atau 90 hari').default(30).parse(req.query.days);
+    res.json(await buildAnalytics(days));
   }),
 );
 
