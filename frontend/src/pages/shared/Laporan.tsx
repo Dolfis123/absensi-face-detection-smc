@@ -57,7 +57,7 @@ export default function Laporan() {
               Unduh Excel (CSV)
             </Button>
           </div>
-          <p className="mt-2 text-xs text-slate-500">PDF berisi ringkasan semua karyawan dan rincian harian per karyawan, termasuk istirahat.</p>
+          <p className="mt-2 text-xs text-slate-500">PDF berisi tabel rekap berkode per hari (H/T/1x/A/I/S/C/OFF) dengan % hadir, catatan per karyawan (terlambat, absen sekali, alfa, izin), tanda tangan, dan lampiran jam absen. Akun uji coba tidak ikut.</p>
         </Card>
         {user?.role === 'SUPER_ADMIN' && (
           <Card>
@@ -82,7 +82,7 @@ export default function Laporan() {
                 Unduh Excel (CSV)
               </Button>
             </div>
-            <p className="mt-2 text-xs text-slate-500">PDF resmi dilengkapi kolom tanda tangan pengesah laporan (diatur di Identitas & Kop Surat).</p>
+            <p className="mt-2 text-xs text-slate-500">Format sama dengan rekap rentang tanggal, untuk satu bulan penuh. Nama pengesah tanda tangan diatur di Identitas & Kop Surat.</p>
           </Card>
         )}
       </div>

@@ -6,7 +6,7 @@ import { api, EmployeeRecap, Holiday, LeaveRequest, Shift, SlotType } from '../.
 import type { MyDocuments } from './Dokumen';
 import { useAuth } from '../../lib/auth';
 import { useServerClock } from '../../lib/clock';
-import { addDays, fmtDate, greeting, shortDay, SLOT_LABEL } from '../../lib/format';
+import { addDays, fmtDate, greeting, OFF_CLS, shiftColorCls, shiftShort, shortDay, SLOT_LABEL } from '../../lib/format';
 
 interface ScheduleResponse {
   schedules: { date: string; off: boolean; post: string | null; postCode: string | null; shift: { id: number; name: string; startTime: string; endTime: string } | null }[];
@@ -279,7 +279,8 @@ export default function BerandaKaryawan() {
               const sh = row?.shift;
               const isOff = !!row?.off;
               const isHoliday = sched.holidays.some((h) => h.date === d);
-              const shiftIdx = sh ? Math.max(0, shifts.findIndex((s) => s.id === sh.id)) : 0;
+              // Warna & singkatan sama dengan roster dan PDF (S1 kuning, S2 biru tua, SIANG hijau toska, PENUH ungu, OFF merah)
+              const full = sh ? shifts.find((s) => s.id === sh.id) : undefined;
               return (
                 <div
                   key={d}
@@ -292,18 +293,20 @@ export default function BerandaKaryawan() {
                   <div className="text-lg font-bold text-slate-900">{sd.num}</div>
                   <div
                     className={cx(
-                      'mt-1 truncate rounded-md px-1 py-0.5 text-[10px] font-semibold',
+                      'mt-1 truncate rounded-md px-1 py-0.5 text-[10px] font-bold',
                       isHoliday
-                        ? 'bg-slate-200 text-slate-600'
+                        ? 'bg-white text-rose-600 ring-1 ring-inset ring-rose-300'
                         : isOff
-                          ? 'bg-slate-600 text-white'
+                          ? OFF_CLS
                           : sh
-                            ? ['bg-sky-100 text-sky-700', 'bg-violet-100 text-violet-700', 'bg-teal-100 text-teal-700'][shiftIdx % 3]
+                            ? shiftColorCls(full?.code)
                             : 'text-slate-400',
                     )}
+                    title={sh ? `${sh.name} ${sh.startTime}–${sh.endTime}${row?.postCode ? ` · pos ${row.postCode}` : ''}` : undefined}
                   >
-                    {isHoliday ? 'Libur' : isOff ? 'Off' : sh ? sh.name : '—'}
+                    {isHoliday ? 'LIBUR' : isOff ? 'OFF' : sh ? (full ? shiftShort(full) : sh.name) : '—'}
                   </div>
+                  {sh && row?.postCode && <div className="mt-0.5 text-[10px] font-semibold text-slate-500">{row.postCode}</div>}
                 </div>
               );
             })}

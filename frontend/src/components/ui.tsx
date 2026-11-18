@@ -256,13 +256,13 @@ export function StatCard({
   progress?: number; // 0..1
 }) {
   return (
-    <div className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-card sm:p-5">
+    <div className="rounded-2xl border border-slate-200/80 bg-white p-3.5 shadow-card sm:p-5">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="text-sm font-medium text-slate-500">{label}</p>
-          <p className="mt-1.5 text-3xl font-bold tracking-tight text-slate-900">{value}</p>
+          <p className="mt-1.5 text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">{value}</p>
         </div>
-        <span className={cx('flex h-10 w-10 shrink-0 items-center justify-center rounded-xl', TONES[tone])}>
+        <span className={cx('hidden h-10 w-10 shrink-0 items-center justify-center rounded-xl sm:flex', TONES[tone])}>
           <Icon name={icon} />
         </span>
       </div>

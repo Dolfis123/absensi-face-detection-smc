@@ -21,7 +21,7 @@ const SUMMARY_ITEMS: { key: keyof Summary; label: string; bar: string }[] = [
   { key: 'terlambat', label: 'Terlambat', bar: 'bg-amber-500' },
   { key: 'absenSekali', label: 'Absen Sekali', bar: 'bg-violet-500' },
   { key: 'izin', label: 'Izin', bar: 'bg-sky-500' },
-  { key: 'sakit', label: 'Sakit', bar: 'bg-violet-500' },
+  { key: 'sakit', label: 'Sakit', bar: 'bg-pink-500' },
   { key: 'cuti', label: 'Cuti', bar: 'bg-indigo-500' },
   { key: 'alfa', label: 'Alfa', bar: 'bg-rose-500' },
   { key: 'istirahatLebih', label: 'Istirahat Lebih', bar: 'bg-orange-500' },

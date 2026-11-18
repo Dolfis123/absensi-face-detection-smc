@@ -33,7 +33,7 @@ export const STATUS_STYLE: Record<DayStatus, StatusStyle> = {
   TERLAMBAT: { label: 'Terlambat', cls: 'bg-amber-50 text-amber-800 ring-1 ring-amber-600/20', dot: 'bg-amber-500' },
   ALFA: { label: 'Alfa', cls: 'bg-rose-50 text-rose-700 ring-1 ring-rose-600/15', dot: 'bg-rose-500' },
   IZIN: { label: 'Izin', cls: 'bg-sky-50 text-sky-700 ring-1 ring-sky-600/15', dot: 'bg-sky-500' },
-  SAKIT: { label: 'Sakit', cls: 'bg-violet-50 text-violet-700 ring-1 ring-violet-600/15', dot: 'bg-violet-500' },
+  SAKIT: { label: 'Sakit', cls: 'bg-pink-50 text-pink-700 ring-1 ring-pink-600/15', dot: 'bg-pink-500' },
   CUTI: { label: 'Cuti', cls: 'bg-indigo-50 text-indigo-700 ring-1 ring-indigo-600/15', dot: 'bg-indigo-500' },
   LIBUR: { label: 'Libur', cls: 'bg-slate-100 text-slate-700 ring-1 ring-slate-500/15', dot: 'bg-slate-500' },
   OFF: { label: 'Belum Dijadwalkan', cls: 'bg-slate-50 text-slate-500 ring-1 ring-slate-500/10', dot: 'bg-slate-300' },
