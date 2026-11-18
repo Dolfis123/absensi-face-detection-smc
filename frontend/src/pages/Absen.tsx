@@ -4,7 +4,64 @@ import { Camera, CameraHandle } from '../components/Camera';
 import { Button } from '../components/ui';
 import { api, ApiError, errMsg, Geofence, SlotType } from '../lib/api';
 import { fmtMinutes, haversine, SLOT_LABEL, STATUS_STYLE } from '../lib/format';
-// 
+import { useOrg } from '../lib/org';
+
+interface ShiftWindow {
+  name: string;
+  code: string;
+  startTime: string;
+  endTime: string;
+  masuk: { open: string; close: string; lateUntil: string } | null;
+  pulang: { open: string; close: string } | null;
+}
+
+/** Keadaan jam absen satu shift pada jam sekarang (HH:MM), untuk panduan petugas. */
+function windowState(w: ShiftWindow, now: string): { text: string; tone: 'open' | 'late' | 'closed' | 'wait' | 'done' } {
+  const m = w.masuk;
+  const p = w.pulang;
+  if (m && now < m.open) return { text: `Absen masuk dibuka ${m.open}`, tone: 'wait' };
+  if (m && now <= m.close) return { text: `MASUK dibuka · tepat waktu s.d. ${m.close}`, tone: 'open' };
+  if (m && now <= m.lateUntil) return { text: `Masuk TERLAMBAT s.d. ${m.lateUntil} · lewat itu ALFA`, tone: 'late' };
+  if (p && now < p.open) return { text: `Masuk ditutup ${m?.lateUntil ?? ''} · pulang ${p.open}`, tone: 'closed' };
+  if (p && now <= p.close) return { text: `PULANG dibuka · s.d. ${p.close}`, tone: 'open' };
+  return { text: 'Absensi shift ini sudah selesai', tone: 'done' };
+}
+const TONE: Record<ReturnType<typeof windowState>['tone'], string> = {
+  open: 'bg-emerald-500/20 text-emerald-100 ring-emerald-400/40',
+  late: 'bg-amber-500/20 text-amber-100 ring-amber-400/40',
+  closed: 'bg-rose-500/15 text-rose-100 ring-rose-400/30',
+  wait: 'bg-white/5 text-slate-300 ring-white/10',
+  done: 'bg-white/5 text-slate-500 ring-white/5',
+};
+
+/** Getar + bunyi singkat supaya hasil absen terasa walau layar tidak dilihat (parkiran ramai). */
+function feedback(ok: boolean) {
+  try {
+    navigator.vibrate?.(ok ? 120 : [220, 120, 220]);
+  } catch {
+    /* tidak didukung */
+  }
+  try {
+    const Ctx = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    if (!Ctx) return;
+    const ctx = new Ctx();
+    const tones = ok ? [880, 1320] : [300, 200];
+    tones.forEach((f, i) => {
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.type = ok ? 'sine' : 'square';
+      o.frequency.value = f;
+      g.gain.value = 0.08;
+      o.connect(g).connect(ctx.destination);
+      const t = ctx.currentTime + i * 0.16;
+      o.start(t);
+      o.stop(t + 0.14);
+    });
+    setTimeout(() => ctx.close(), 800);
+  } catch {
+    /* audio tidak tersedia */
+  }
+}
 
 interface CheckResult {
   message: string;
@@ -64,6 +121,17 @@ export default function Absen() {
   const [pin, setPin] = useState('');
   const [pinError, setPinError] = useState<string | null>(null);
   const clock = useServerClock();
+  const org = useOrg();
+  const [camReady, setCamReady] = useState(false);
+  const [windows, setWindows] = useState<{ holiday: string | null; shifts: ShiftWindow[] } | null>(null);
+
+  // Jam absen shift hari ini (diperbarui tiap 5 menit, mis. setelah pergantian hari)
+  useEffect(() => {
+    const load = () => api.get<{ holiday: string | null; shifts: ShiftWindow[] }>('/attendance/windows').then(setWindows).catch(() => undefined);
+    load();
+    const id = setInterval(load, 5 * 60_000);
+    return () => clearInterval(id);
+  }, []);
 
   useEffect(() => {
     api.get<Geofence>('/attendance/geofence').then(setGeo).catch((e) => setGpsError(errMsg(e)));
@@ -103,6 +171,7 @@ export default function Absen() {
       const r = await api.post<CheckResult>('/attendance/check', { image, ...position, pin: pinCode });
       setPinPrompt(null);
       setResult(r);
+      feedback(true);
     } catch (e) {
       // Wajah mirip karyawan lain (mis. saudara): server meminta PIN. Foto yang sama dikirim ulang bersama PIN.
       if (e instanceof ApiError && e.details?.needPin) {
@@ -112,6 +181,7 @@ export default function Absen() {
       } else {
         setPinPrompt(null);
         setError(errMsg(e));
+        feedback(false);
       }
     } finally {
       setSubmitting(false);
@@ -126,6 +196,7 @@ export default function Absen() {
     if (!shot.ok) {
       setSubmitting(false);
       setError(shot.reason);
+      feedback(false);
       return;
     }
     send(shot.image, pos);
@@ -140,16 +211,38 @@ export default function Absen() {
     <div className="min-h-screen bg-slate-900 text-white">
       <div className="mx-auto flex max-w-md flex-col gap-4 p-4">
         <div className="flex items-center justify-between">
-          <Link to="/" className="rounded-lg px-2 py-1 text-sm text-slate-300 hover:bg-white/10">
-            ← Kembali
-          </Link>
-          <div className="text-right">
+          <div className="min-w-0">
+            <Link to="/" className="-ml-2 rounded-lg px-2 py-1 text-sm text-slate-300 hover:bg-white/10">
+              ← Kembali
+            </Link>
+            <div className="mt-1 truncate text-sm font-semibold text-white">Absensi Pos Parkir</div>
+            <div className="truncate text-xs text-slate-400">{org.placeName}</div>
+          </div>
+          <div className="shrink-0 text-right">
             <div className="font-mono text-2xl font-bold tabular-nums">{clock}</div>
             <div className="text-[11px] text-slate-400">Jam server · WIT</div>
           </div>
         </div>
 
-        <Camera ref={camera} />
+        {windows && (windows.holiday || windows.shifts.length > 0) && (
+          <div className="space-y-1.5">
+            {windows.holiday && <p className="rounded-xl bg-white/5 px-3 py-2 text-xs text-slate-300">Hari ini libur: {windows.holiday}</p>}
+            {windows.shifts.map((w) => {
+              const st = windowState(w, clock.slice(0, 5));
+              if (st.tone === 'done') return null; // shift yang absensinya sudah selesai tidak perlu ditampilkan
+              return (
+                <div key={w.code} className={`flex items-center justify-between gap-3 rounded-xl px-3 py-2 text-xs ring-1 ${TONE[st.tone]}`}>
+                  <span className="shrink-0 font-semibold">
+                    {w.name} <span className="font-normal opacity-70">{w.startTime}–{w.endTime}</span>
+                  </span>
+                  <span className="text-right">{st.text}</span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        <Camera ref={camera} onReady={setCamReady} />
 
         <div className="grid grid-cols-2 gap-2 text-sm">
           <div className={`rounded-xl p-3 ${inside ? 'bg-emerald-500/20 text-emerald-200' : 'bg-rose-500/20 text-rose-200'}`}>
@@ -163,14 +256,24 @@ export default function Absen() {
             <div className="text-xs opacity-80">Akurasi GPS</div>
             <div className="text-lg font-bold">{pos ? `±${Math.round(pos.accuracy)} m` : '—'}</div>
           </div>
-        </div> 
+        </div>
         {gpsError && <p className="text-center text-sm text-amber-300">{gpsError}</p>}
+        {!gpsError && distance !== null && geo && !inside && (
+          <p className="rounded-xl bg-rose-500/15 px-3 py-2 text-center text-sm text-rose-100">
+            Anda <b>{Math.max(1, Math.round(distance - geo.radiusMeters))} m di luar area pos</b>. Mendekatlah ke pos lalu coba lagi.
+          </p>
+        )}
+        {!gpsError && pos && geo && inside && !accurate && (
+          <p className="rounded-xl bg-amber-500/15 px-3 py-2 text-center text-sm text-amber-100">
+            Sinyal GPS kurang akurat (±{Math.round(pos.accuracy)} m, maks {geo.maxAccuracyMeters} m). Tunggu sebentar atau pindah ke tempat terbuka.
+          </p>
+        )}
         <p className="text-center text-xs text-slate-400">
           Posisikan wajah di dalam oval, lepaskan masker/kacamata hitam, pastikan hanya satu orang di depan kamera.
         </p>
 
-        <Button className="py-4 text-lg" onClick={submit} loading={submitting} disabled={!pos || !geo}>
-          {submitting ? 'Memverifikasi…' : 'Ambil Foto & Absen'}
+        <Button className="py-4 text-lg" onClick={submit} loading={submitting} disabled={!pos || !geo || !camReady}>
+          {submitting ? 'Memverifikasi…' : !camReady ? 'Kamera belum siap…' : !pos ? 'Menunggu lokasi GPS…' : 'Ambil Foto & Absen'}
         </Button>
         <p className="text-center text-[11px] text-slate-500">
           Lokasi & wajah divalidasi ulang di server. Indikator di atas hanya panduan.
