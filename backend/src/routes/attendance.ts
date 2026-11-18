@@ -17,7 +17,7 @@ import {
 import { env } from '../config/env';
 import { rankFaces } from '../services/faceClient';
 import { decideIdentity, matchPin } from '../services/identity';
-import { label, loadShifts, resolveActiveSlot, slotDeadline } from '../services/shiftService';
+import { label, loadShifts, resolveActiveSlot } from '../services/shiftService';
 import { haversineMeters } from '../utils/geo';
 import { findActiveMark } from '../services/notWorking';
 import { ah, HttpError } from '../utils/http';
@@ -42,43 +42,6 @@ router.get(
 );
 
 router.get('/time', (_req, res) => res.json(witNow()));
-
-/**
- * Jam absen shift yang berjalan hari ini (tanpa data pribadi), untuk panduan di halaman absen:
- * kapan absen masuk dibuka, batas terlambat (lewat = Alfa), dan jam absen pulang.
- */
-router.get(
-  '/windows',
-  ah(async (_req, res) => {
-    const now = witNow();
-    const [shifts, used, holiday] = await Promise.all([
-      loadShifts(),
-      EmployeeSchedule.findAll({ where: { date: now.date, shiftId: { [Op.ne]: null } }, attributes: ['shiftId'] }),
-      Holiday.findOne({ where: { date: now.date } }),
-    ]);
-    const today = new Set(used.map((s) => s.shiftId));
-    const hm = (m: number) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
-    res.json({
-      date: now.date,
-      holiday: holiday?.name ?? null,
-      shifts: [...shifts.values()]
-        .filter((sh) => today.has(sh.id))
-        .sort((a, b) => a.startTime.localeCompare(b.startTime))
-        .map((sh) => {
-          const masuk = sh.slots.find((x) => x.type === 'MASUK');
-          const pulang = sh.slots.find((x) => x.type === 'PULANG');
-          return {
-            name: sh.name,
-            code: sh.code,
-            startTime: sh.startTime,
-            endTime: sh.endTime,
-            masuk: masuk ? { open: masuk.windowStart, close: masuk.windowEnd, lateUntil: hm(slotDeadline(masuk)) } : null,
-            pulang: pulang ? { open: pulang.windowStart, close: pulang.windowEnd } : null,
-          };
-        }),
-    });
-  }),
-);
 
 const checkSchema = z.object({
   image: z

@@ -60,7 +60,7 @@ const meanAbsDiff = (a: Float32Array, b: Float32Array) => {
 const mean = (a: Float32Array) => a.reduce((s, v) => s + v, 0) / a.length;
 
 /** Pratinjau kamera depan dengan panduan oval posisi wajah. */
-export const Camera = forwardRef<CameraHandle, { className?: string; onReady?: (ready: boolean) => void }>(function Camera({ className, onReady }, ref) {
+export const Camera = forwardRef<CameraHandle, { className?: string }>(function Camera({ className }, ref) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [error, setError] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
@@ -134,10 +134,7 @@ export const Camera = forwardRef<CameraHandle, { className?: string; onReady?: (
             autoPlay
             playsInline
             muted
-            onLoadedData={() => {
-              setReady(true);
-              onReady?.(true);
-            }}
+            onLoadedData={() => setReady(true)}
             className="aspect-[3/4] w-full -scale-x-100 object-cover"
           />
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
