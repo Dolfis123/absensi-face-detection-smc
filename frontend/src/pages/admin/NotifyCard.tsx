@@ -10,6 +10,8 @@ interface NotifySettings {
 }
 interface NotifyData {
   configured: boolean;
+  botUsername: string | null;
+  seenCount: number;
   settings: NotifySettings;
   employees: { userId: number; fullName: string; role: Role; linked: boolean; chatName: string | null }[];
   groups: { id: string; name: string }[];
@@ -141,10 +143,37 @@ export function NotifyCard() {
               </Field>
             </div>
             {data.groups.length === 0 && (
-              <p className="rounded-xl bg-amber-50 px-3 py-2 text-xs text-amber-900">
-                Grup belum ditemukan. Tambahkan bot ke grup petugas di Telegram (Info grup → Tambah anggota → cari nama bot), kirim pesan <code>/start</code> di grup, lalu muat ulang halaman ini.
-              </p>
+              <div className="space-y-2 rounded-xl bg-amber-50 px-3 py-2.5 text-xs text-amber-950">
+                <p className="font-semibold">Grup belum ditemukan. Lakukan langkah ini:</p>
+                <ol className="list-decimal space-y-1 pl-4">
+                  <li>
+                    Di Telegram buka grup petugas → Info grup → <b>Tambah anggota</b> → cari <b>{data.botUsername ? `@${data.botUsername}` : 'nama bot'}</b>.
+                  </li>
+                  <li>
+                    Di grup itu kirim pesan persis seperti ini:{' '}
+                    <code className="select-all rounded bg-white px-1.5 py-0.5 font-semibold ring-1 ring-amber-200">/start@{data.botUsername ?? 'nama_bot'}</code>
+                    <span className="block text-amber-800">(pakai @nama bot, karena di grup bot hanya membaca perintah yang ditujukan kepadanya)</span>
+                  </li>
+                  <li>Bot membalas “Grup ini sudah terbaca”. Lalu tekan tombol <b>Cari grup</b> di bawah.</li>
+                </ol>
+              </div>
             )}
+            <Button
+              variant="secondary"
+              loading={busy === 'find'}
+              onClick={() =>
+                act(
+                  'find',
+                  async () => {
+                    const r = await api.post<{ groups: { id: string; name: string }[] }>('/system/notify/refresh');
+                    if (!r.groups.length) throw new Error('Grup belum terbaca. Pastikan bot sudah menjadi anggota grup dan pesan /start@nama_bot sudah dikirim di grup.');
+                  },
+                  'Grup ditemukan, silakan pilih di daftar',
+                )
+              }
+            >
+              Cari grup
+            </Button>
             <Button variant="secondary" disabled={!s.group.chatId || dirty} loading={busy === 'group'} onClick={() => act('group', () => api.post('/system/notify/group-now'), 'Jadwal besok terkirim ke grup')} title={dirty ? 'Simpan pengaturan dulu' : undefined}>
               Kirim jadwal besok sekarang
             </Button>

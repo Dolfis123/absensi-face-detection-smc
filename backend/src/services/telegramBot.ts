@@ -99,8 +99,13 @@ async function handle(updates: Update[]) {
     else seen.push(entry);
 
     const text = u.message?.text?.trim() ?? '';
+    if ((chat.type === 'group' || chat.type === 'supergroup') && /^\/start(@\w+)?\b/.test(text)) {
+      await sendTo(id, '✅ Grup ini sudah terbaca oleh bot SMC-FaceAttend. Super Admin sekarang bisa memilihnya untuk kiriman jadwal harian.');
+      continue;
+    }
     if (chat.type !== 'private' || !text.startsWith('/')) continue;
-    const [cmd, arg] = text.split(/\s+/);
+    const [rawCmd, arg] = text.split(/\s+/);
+    const cmd = rawCmd.replace(/@\w+$/, '');
     if (cmd === '/start' && arg) {
       const tokens = await readJson<Record<string, { userId: number; exp: number }>>(TOKENS_KEY, {});
       const t = tokens[arg];

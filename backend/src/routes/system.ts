@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { requireRole } from '../middleware/auth';
 import { ATTENDEE_ROLES, SystemAlert, TelegramLink, User } from '../models';
 import { getNotifySettings, reminderText, runGroupSchedule, saveNotifySettings } from '../services/autoNotify';
-import { seenChats, sendTo } from '../services/telegramBot';
+import { botUsername, pollOnce, seenChats, sendTo } from '../services/telegramBot';
 import { getTestAccountIds } from '../services/testAccounts';
 import { addDays, witNow } from '../utils/time';
 import { dailySummaryText, discoverChats, getChats, lastResult, runChecks, saveChats, sendTelegram, telegramConfigured } from '../services/systemMonitor';
@@ -85,8 +85,11 @@ router.get(
       getTestAccountIds(),
       seenChats(),
     ]);
+    const bot = telegramConfigured() ? await botUsername().catch(() => null) : null;
     res.json({
       configured: telegramConfigured(),
+      botUsername: bot,
+      seenCount: seen.length,
       settings,
       employees: users
         .filter((u) => !testIds.has(u.id))
@@ -106,6 +109,21 @@ router.put(
     if (s.group.enabled && !s.group.chatId) throw new HttpError(400, 'Pilih grup Telegram tujuan jadwal dulu');
     await saveNotifySettings(s);
     res.json(s);
+  }),
+);
+
+/** Baca pesan baru yang masuk ke bot sekarang juga (untuk menemukan grup yang baru ditambahkan). */
+router.post(
+  '/notify/refresh',
+  ah(async (_req, res) => {
+    if (!telegramConfigured()) throw new HttpError(400, 'TELEGRAM_BOT_TOKEN belum diisi di backend/.env');
+    try {
+      await pollOnce();
+    } catch (e) {
+      throw new HttpError(400, `Gagal membaca pesan bot: ${(e as Error).message}`);
+    }
+    const seen = await seenChats();
+    res.json({ groups: seen.filter((c) => c.type === 'group' || c.type === 'supergroup').map(({ id, name }) => ({ id, name })), seenCount: seen.length });
   }),
 );
 
