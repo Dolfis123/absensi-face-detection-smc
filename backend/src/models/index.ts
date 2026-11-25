@@ -1075,4 +1075,38 @@ EmployeeExit.init(
   { sequelize, tableName: 'employee_exits', updatedAt: false },
 );
 
+// ───────────────────────────── Laporan update parkiran (Koordinator, tiap ±2 jam) ─────────────────────────────
+/** Laporan keterisian lot untuk pimpinan: kendaraan terisi & keluar (kumulatif sejak buka) per jenis. */
+export class ParkingStatusReport extends Model<InferAttributes<ParkingStatusReport>, InferCreationAttributes<ParkingStatusReport>> {
+  declare id: CreationOptional<number>;
+  declare date: string;
+  declare time: string; // HH:MM WIT
+  declare carParked: number;
+  declare motorParked: number;
+  declare carOut: number;
+  declare motorOut: number;
+  declare capacityCar: number; // kapasitas lot saat laporan dibuat
+  declare capacityMotor: number;
+  declare note: string | null;
+  declare createdById: number;
+  declare createdAt: CreationOptional<Date>;
+}
+ParkingStatusReport.init(
+  {
+    id: { type: DataTypes.INTEGER.UNSIGNED, autoIncrement: true, primaryKey: true },
+    date: { type: DataTypes.DATEONLY, allowNull: false },
+    time: { type: DataTypes.STRING(5), allowNull: false },
+    carParked: { type: DataTypes.INTEGER.UNSIGNED, allowNull: false },
+    motorParked: { type: DataTypes.INTEGER.UNSIGNED, allowNull: false },
+    carOut: { type: DataTypes.INTEGER.UNSIGNED, allowNull: false },
+    motorOut: { type: DataTypes.INTEGER.UNSIGNED, allowNull: false },
+    capacityCar: { type: DataTypes.INTEGER.UNSIGNED, allowNull: false },
+    capacityMotor: { type: DataTypes.INTEGER.UNSIGNED, allowNull: false },
+    note: { type: DataTypes.STRING(300), allowNull: true },
+    createdById: { type: DataTypes.INTEGER.UNSIGNED, allowNull: false },
+    createdAt: DataTypes.DATE,
+  },
+  { sequelize, tableName: 'parking_status_reports', updatedAt: false, indexes: [{ fields: ['date', 'time'] }] },
+);
+
 export { sequelize };

@@ -45,6 +45,7 @@ export const NAV_GROUPS: Record<Role, NavGroup[]> = {
       items: [
         { to: '/app/beranda', label: 'Beranda', icon: 'home' },
         { to: '/app/monitoring', label: 'Monitoring Hari Ini', icon: 'activity' },
+        { to: '/app/laporan-kendaraan', label: 'Laporan Kendaraan', icon: 'car' },
       ],
     },
     {
@@ -80,6 +81,7 @@ export const NAV_GROUPS: Record<Role, NavGroup[]> = {
       items: [
         { to: '/app/beranda', label: 'Beranda', icon: 'home' },
         { to: '/app/monitoring', label: 'Monitoring Hari Ini', icon: 'activity' },
+        { to: '/app/laporan-kendaraan', label: 'Laporan Kendaraan', icon: 'car' },
       ],
     },
     {
