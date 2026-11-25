@@ -854,7 +854,8 @@ DisciplineLetter.init(
     voidedAt: { type: DataTypes.DATE, allowNull: true },
     createdAt: DataTypes.DATE,
   },
-  { sequelize, tableName: 'discipline_letters', updatedAt: false, indexes: [{ unique: true, fields: ['year', 'seq'] }, { fields: ['user_id'] }] },
+  // (year, seq) tidak unik: nomor surat yang dibatalkan boleh dipakai lagi; keunikan di antara surat aktif dijaga di kode
+  { sequelize, tableName: 'discipline_letters', updatedAt: false, indexes: [{ fields: ['year', 'seq'] }, { fields: ['user_id'] }] },
 );
 
 // ───────────────────────────── Upah pokok per karyawan (untuk rekap upah kehadiran) ─────────────────────────────

@@ -1,4 +1,4 @@
-import { FormEvent, useState } from 'react';
+import { FormEvent, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useLoad } from '../../components/attendance';
 import { useFeedback } from '../../components/feedback';
@@ -181,6 +181,16 @@ function CreateLetter({ row, onClose, onCreated }: { row: Row; onClose: () => vo
   const today = todayWIT();
   const initial: LetterType = row.recommendation && row.recommendation !== 'KEPUTUSAN_MANAJEMEN' ? row.recommendation : 'PERINGATAN_1';
   const [form, setForm] = useState({ type: initial, letterDate: today, reportDate: addDays(today, 2), reportTime: '10:00', reportPlace: '', note: '' });
+  // Nomor urut surat: usulan otomatis, bisa diubah (mis. memakai lagi nomor surat yang salah cetak & dibatalkan)
+  const [seq, setSeq] = useState<number | null>(null);
+  const [num, setNum] = useState<{ number: string; usedBy: string | null } | null>(null);
+  useEffect(() => {
+    api.get<{ seq: number }>(`/discipline/next-number?date=${form.letterDate}&type=${form.type}`).then((r) => setSeq(r.seq)).catch(() => undefined);
+  }, [form.letterDate.slice(0, 4)]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!seq) return setNum(null);
+    api.get<{ number: string; usedBy: string | null }>(`/discipline/next-number?date=${form.letterDate}&type=${form.type}&seq=${seq}`).then(setNum).catch(() => setNum(null));
+  }, [seq, form.letterDate, form.type]);
   const [saving, setSaving] = useState(false);
   const isCall = form.type.startsWith('PANGGILAN');
   const dates = isCall ? row.streakDates : row.monthDates;
@@ -195,6 +205,7 @@ function CreateLetter({ row, onClose, onCreated }: { row: Row; onClose: () => vo
         letterDate: form.letterDate,
         ...(isCall ? { reportDate: form.reportDate, reportTime: form.reportTime, reportPlace: form.reportPlace || undefined } : {}),
         note: form.note || undefined,
+        seq: seq ?? undefined,
       });
       onCreated(l);
     } catch (err) {
@@ -221,6 +232,9 @@ function CreateLetter({ row, onClose, onCreated }: { row: Row; onClose: () => vo
           Tanggal mangkir yang dicantumkan ({dates.length} hari, dari catatan absensi):
           <div className="mt-1 text-xs">{dates.length ? dates.map((d) => fmtDate(d)).join(' · ') : '— tidak ada —'}</div>
         </div>
+        <Field label="Nomor urut surat" hint={num ? (num.usedBy ? `Nomor ini sudah dipakai surat ${num.usedBy}. Pilih nomor lain.` : `Nomor surat: ${num.number}`) : 'Otomatis: setelah nomor terakhir yang masih berlaku'}>
+          <Input type="number" min={1} max={9999} value={seq ?? ''} onChange={(e) => setSeq(e.target.value ? Math.max(1, Math.floor(Number(e.target.value))) : null)} className="!w-32" />
+        </Field>
         <Field label="Tanggal surat">
           <Input type="date" max={today} value={form.letterDate} onChange={(e) => setForm({ ...form, letterDate: e.target.value })} required />
         </Field>
@@ -247,7 +261,7 @@ function CreateLetter({ row, onClose, onCreated }: { row: Row; onClose: () => vo
           <Button type="button" variant="secondary" onClick={onClose}>
             Batal
           </Button>
-          <Button type="submit" loading={saving}>
+          <Button type="submit" disabled={!!num?.usedBy} loading={saving}>
             Terbitkan & Unduh PDF
           </Button>
         </div>

@@ -82,6 +82,24 @@ router.get(
   }),
 );
 
+/** Nomor urut berikutnya: setelah nomor tertinggi dari surat yang masih berlaku (surat dibatalkan tidak dihitung). */
+async function nextSeq(year: number) {
+  const max = (await DisciplineLetter.max<number, DisciplineLetter>('seq', { where: { year, voidedAt: null } })) ?? 0;
+  return max + 1;
+}
+
+/** Usulan nomor surat untuk formulir (bisa diubah sebelum diterbitkan). */
+router.get(
+  '/next-number',
+  ah(async (req, res) => {
+    const q = z.object({ date: z.string().regex(DATE_RE), type: z.enum(LETTER_TYPES), seq: z.coerce.number().int().min(1).max(9999).optional() }).parse(req.query);
+    const year = Number(q.date.slice(0, 4));
+    const seq = q.seq ?? (await nextSeq(year));
+    const used = await DisciplineLetter.findOne({ where: { year, seq, voidedAt: null }, attributes: ['number'] });
+    res.json({ seq, number: letterNumber(seq, q.type, await getDisciplineSettings(), q.date), usedBy: used?.number ?? null });
+  }),
+);
+
 router.post(
   '/letters',
   ah(async (req, res) => {
@@ -94,6 +112,8 @@ router.post(
         reportTime: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Format jam HH:MM').optional(),
         reportPlace: z.string().trim().max(150).optional(),
         note: z.string().trim().max(500).optional(),
+        // Nomor urut pilihan sendiri (mis. mengisi nomor surat yang salah cetak lalu dibatalkan)
+        seq: z.number().int().min(1).max(9999).optional(),
       })
       .parse(req.body);
     const now = witNow();
@@ -127,8 +147,9 @@ router.post(
     const settings = await getDisciplineSettings();
     const letter = await sequelize.transaction(async (transaction) => {
       const year = Number(letterDate.slice(0, 4));
-      const last = await DisciplineLetter.max<number, DisciplineLetter>('seq', { where: { year }, transaction });
-      const seq = (last ?? 0) + 1;
+      const seq = body.seq ?? (await nextSeq(year));
+      const taken = await DisciplineLetter.findOne({ where: { year, seq, voidedAt: null }, transaction });
+      if (taken) throw new HttpError(409, `Nomor urut ${String(seq).padStart(3, '0')} tahun ${year} sudah dipakai surat ${taken.number}`);
       return DisciplineLetter.create(
         {
           userId: user.id,

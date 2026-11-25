@@ -11,6 +11,22 @@ import { addDays, hhmmToMinutes, minutesToHhmm, witNow } from './utils/time';
  */
 const MIGRATIONS: { id: string; up: () => Promise<void> }[] = [
   {
+    // Nomor surat yang dibatalkan (mis. salah cetak) boleh dipakai lagi: indeks unik (year, seq) diganti indeks biasa.
+    id: '2026-11-25-nomor-surat-bisa-dipakai-ulang',
+    async up() {
+      const idx = await sequelize.query<{ INDEX_NAME: string }>(
+        "SELECT DISTINCT INDEX_NAME FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'discipline_letters' AND NON_UNIQUE = 0 AND INDEX_NAME <> 'PRIMARY' AND COLUMN_NAME IN ('year', 'seq')",
+        { type: QueryTypes.SELECT },
+      );
+      for (const { INDEX_NAME } of idx) await sequelize.query(`ALTER TABLE \`discipline_letters\` DROP INDEX \`${INDEX_NAME}\``);
+      const has = await sequelize.query<{ n: number }>(
+        "SELECT COUNT(*) n FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'discipline_letters' AND INDEX_NAME = 'discipline_letters_year_seq'",
+        { type: QueryTypes.SELECT },
+      );
+      if (!Number(has[0]?.n)) await sequelize.query('ALTER TABLE `discipline_letters` ADD INDEX `discipline_letters_year_seq` (`year`, `seq`)');
+    },
+  },
+  {
     // Surat Peringatan Ketiga (Alfa 8× sebulan): tambah nilai enum di discipline_letters. Data lain tidak disentuh.
     id: '2026-11-18-surat-peringatan-ketiga',
     async up() {
