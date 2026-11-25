@@ -87,7 +87,7 @@ async function reportText(r: R, prev: R | null, order: number, reporter: string,
     `• Total keluar hari ini: ${num(r.carOut + r.motorOut)} unit`,
   ];
   if (r.note) out.push('', `📝 Catatan: ${r.note}`);
-  out.push('', 'Demikian laporan dari Tim Parkir. Terima kasih 🙏', '', 'Hormat kami,', reporterRole, `*${reporter}*`);
+  out.push('', 'Demikian laporan dari Tim Parkir. Terima kasih 🙏', '', 'TTD,', `${reporterRole},`, '', `*${reporter}*`);
   return out.join('\n');
 }
 
@@ -95,10 +95,13 @@ async function dayReports(date: string) {
   const rows = await ParkingStatusReport.findAll({ where: { date }, order: [['time', 'ASC'], ['id', 'ASC']] });
   const users = await User.findAll({ where: { id: [...new Set(rows.map((r) => r.createdById))].concat(0) }, attributes: ['id', 'fullName', 'role'] });
   const org = await getOrgSettings();
+  // Laporan selalu ditandatangani Koordinator Lapangan; bila dibuat Super Admin, nama Koordinator yang aktif dipakai
+  const coordinator = await User.findOne({ where: { role: 'KOORDINATOR', isActive: true }, attributes: ['fullName'], order: [['id', 'ASC']] });
+  const title = org.coordinatorTitle || 'Koordinator Lapangan';
   return Promise.all(
     rows.map(async (r, i) => {
       const u = users.find((x) => x.id === r.createdById);
-      const role = u?.role === 'KOORDINATOR' ? `${org.coordinatorTitle || 'Koordinator'} Parkir ${org.placeShort ? `Mall ${org.placeShort}` : org.placeName}` : `Tim Parkir ${org.placeShort ? `Mall ${org.placeShort}` : org.placeName}`;
+      const signer = u?.role === 'KOORDINATOR' ? u.fullName : (coordinator?.fullName ?? u?.fullName ?? '-');
       return {
         id: r.id,
         date: r.date,
@@ -112,7 +115,7 @@ async function dayReports(date: string) {
         note: r.note,
         createdBy: u?.fullName ?? '?',
         createdById: r.createdById,
-        text: await reportText(r, rows[i - 1] ?? null, i + 1, u?.fullName ?? '-', role),
+        text: await reportText(r, rows[i - 1] ?? null, i + 1, signer, title),
       };
     }),
   );
