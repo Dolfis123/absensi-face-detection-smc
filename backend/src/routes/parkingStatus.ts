@@ -1,12 +1,15 @@
 /**
- * Laporan update parkiran untuk pimpinan (biasanya tiap ±2 jam) — dibuat Koordinator / Super Admin.
+ * Laporan update parkiran untuk pimpinan (biasanya tiap ±2 jam) — dibuat Koordinator / Super Admin,
+ * atau karyawan yang ditunjuk membantu (mis. saat Koordinator Off) dengan tanda tangan "a.n. Koordinator Lapangan".
  * Petugas mengisi jumlah kendaraan yang sedang terisi dan yang sudah keluar (kumulatif sejak buka);
  * sistem menghitung lot kosong, persentase keterisian, kendaraan masuk, perubahan sejak laporan
  * sebelumnya, lalu menyusun teks siap tempel ke WhatsApp.
  */
 import { Router } from 'express';
 import { z } from 'zod';
+import type { NextFunction, Request, Response } from 'express';
 import { currentUser, requireRole } from '../middleware/auth';
+import { getTestAccountIds } from '../services/testAccounts';
 import { AppSetting, ParkingStatusReport, User } from '../models';
 import { getOrgSettings } from '../services/organization';
 import { fmtLongDate } from '../services/pdfReport';
@@ -14,7 +17,32 @@ import { ah, HttpError } from '../utils/http';
 import { DATE_RE, witNow } from '../utils/time';
 
 const router = Router();
-router.use(requireRole('KOORDINATOR', 'SUPER_ADMIN'));
+
+// ── Karyawan yang ditunjuk membantu membuat laporan (mis. saat Koordinator Off) ──
+const DELEGATES_KEY = 'vehicleReportDelegates';
+async function getDelegates(): Promise<number[]> {
+  const row = await AppSetting.findByPk(DELEGATES_KEY);
+  try {
+    return row ? (JSON.parse(row.value) as number[]) : [];
+  } catch {
+    return [];
+  }
+}
+async function canReport(req: Request) {
+  const me = currentUser(req);
+  if (me.role === 'KOORDINATOR' || me.role === 'SUPER_ADMIN') return true;
+  return me.isActive && (await getDelegates()).includes(me.id);
+}
+
+/** Apakah pengguna ini boleh membuat laporan kendaraan (untuk menampilkan menu). */
+router.get('/access', ah(async (req, res) => res.json({ allowed: await canReport(req) })));
+
+router.use(
+  ah(async (req: Request, _res: Response, next: NextFunction) => {
+    if (!(await canReport(req))) throw new HttpError(403, 'Anda tidak ditunjuk untuk membuat laporan kendaraan');
+    next();
+  }),
+);
 
 interface Settings {
   capacityCar: number;
@@ -101,7 +129,9 @@ async function dayReports(date: string) {
   return Promise.all(
     rows.map(async (r, i) => {
       const u = users.find((x) => x.id === r.createdById);
-      const signer = u?.role === 'KOORDINATOR' ? u.fullName : (coordinator?.fullName ?? u?.fullName ?? '-');
+      // Dibuat karyawan pembantu → ditandatangani sendiri "a.n. Koordinator Lapangan"
+      const signer = u?.role === 'KOORDINATOR' || u?.role === 'KARYAWAN' ? u.fullName : (coordinator?.fullName ?? u?.fullName ?? '-');
+      const signTitle = u?.role === 'KARYAWAN' ? `a.n. ${title}` : title;
       return {
         id: r.id,
         date: r.date,
@@ -115,7 +145,7 @@ async function dayReports(date: string) {
         note: r.note,
         createdBy: u?.fullName ?? '?',
         createdById: r.createdById,
-        text: await reportText(r, rows[i - 1] ?? null, i + 1, signer, title),
+        text: await reportText(r, rows[i - 1] ?? null, i + 1, signer, signTitle),
       };
     }),
   );
@@ -173,6 +203,28 @@ router.delete(
     if (me.role !== 'SUPER_ADMIN' && (r.createdById !== me.id || r.date !== witNow().date)) throw new HttpError(403, 'Hanya laporan Anda hari ini yang bisa dihapus');
     await r.destroy();
     res.status(204).end();
+  }),
+);
+
+/** Daftar karyawan aktif + tanda siapa yang ditunjuk membantu membuat laporan. */
+router.get(
+  '/delegates',
+  requireRole('KOORDINATOR', 'SUPER_ADMIN'),
+  ah(async (_req, res) => {
+    const [ids, users, testIds] = await Promise.all([getDelegates(), User.findAll({ where: { role: 'KARYAWAN', isActive: true }, attributes: ['id', 'fullName'], order: [['fullName', 'ASC']] }), getTestAccountIds()]);
+    res.json(users.filter((u) => !testIds.has(u.id)).map((u) => ({ userId: u.id, fullName: u.fullName, delegate: ids.includes(u.id) })));
+  }),
+);
+
+router.put(
+  '/delegates',
+  requireRole('KOORDINATOR', 'SUPER_ADMIN'),
+  ah(async (req, res) => {
+    const { userIds } = z.object({ userIds: z.array(z.number().int().positive()).max(50) }).parse(req.body);
+    const valid = await User.findAll({ where: { id: userIds.concat(0), role: 'KARYAWAN', isActive: true }, attributes: ['id'] });
+    const ids = valid.map((u) => u.id).sort((a, b) => a - b);
+    await AppSetting.upsert({ key: DELEGATES_KEY, value: JSON.stringify(ids) });
+    res.json({ userIds: ids });
   }),
 );
 

@@ -49,6 +49,7 @@ export default function LaporanKendaraan() {
   const { toast, confirm } = useFeedback();
   const { user } = useAuth();
   const isAdmin = user?.role === 'SUPER_ADMIN';
+  const canManage = isAdmin || user?.role === 'KOORDINATOR';
   const [date, setDate] = useState(todayWIT());
   const { data, error, loading, reload } = useLoad(() => api.get<DayData>(`/parking-status?date=${date}`), [date]);
   const [f, setF] = useState({ time: nowHM(), carParked: '', carOut: '', motorParked: '', motorOut: '', note: '' });
@@ -217,8 +218,56 @@ export default function LaporanKendaraan() {
         )}
       </Card>
 
+      {canManage && <DelegatesCard />}
       {isAdmin && <CapacityCard value={cap} onSaved={reload} />}
     </>
+  );
+}
+
+/** Karyawan yang boleh membuat laporan saat Koordinator Off (Koordinator & Super Admin yang memilih). */
+function DelegatesCard() {
+  const { toast } = useFeedback();
+  const { data, reload } = useLoad(() => api.get<{ userId: number; fullName: string; delegate: boolean }[]>('/parking-status/delegates'));
+  const [sel, setSel] = useState<number[] | null>(null);
+  const [saving, setSaving] = useState(false);
+  useEffect(() => setSel(data ? data.filter((d) => d.delegate).map((d) => d.userId) : null), [data]);
+  if (!data || !sel) return null;
+  const dirty = JSON.stringify([...sel].sort()) !== JSON.stringify(data.filter((d) => d.delegate).map((d) => d.userId).sort());
+  return (
+    <Card
+      className="mt-4"
+      title="Karyawan pembantu laporan"
+      subtitle="Karyawan yang dicentang bisa membuat laporan ini dari HP-nya (mis. saat Koordinator Off). Tanda tangannya: “a.n. Koordinator Lapangan” dengan nama karyawan itu."
+      actions={
+        <Button
+          disabled={!dirty}
+          loading={saving}
+          onClick={async () => {
+            setSaving(true);
+            try {
+              await api.put('/parking-status/delegates', { userIds: sel });
+              toast('Daftar pembantu laporan tersimpan');
+              reload();
+            } catch (e) {
+              toast(errMsg(e), 'error');
+            } finally {
+              setSaving(false);
+            }
+          }}
+        >
+          Simpan
+        </Button>
+      }
+    >
+      <div className="grid gap-1.5 sm:grid-cols-2 lg:grid-cols-3">
+        {data.map((d) => (
+          <label key={d.userId} className={cx('flex items-center gap-2 rounded-lg border px-3 py-2 text-sm', sel.includes(d.userId) ? 'border-brand-300 bg-brand-50/60' : 'border-slate-200')}>
+            <input type="checkbox" checked={sel.includes(d.userId)} onChange={(e) => setSel(e.target.checked ? [...sel, d.userId] : sel.filter((x) => x !== d.userId))} />
+            {d.fullName}
+          </label>
+        ))}
+      </div>
+    </Card>
   );
 }
 

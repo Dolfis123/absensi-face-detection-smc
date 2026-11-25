@@ -243,15 +243,24 @@ export function Layout() {
   const [collapsed, toggleCollapsed] = useCollapsed();
   const { pathname } = useLocation();
   const parking = useParkingSettings();
+  // Karyawan yang ditunjuk membantu membuat laporan kendaraan (mis. saat Koordinator Off)
+  const [vehicleReporter, setVehicleReporter] = useState(false);
+  useEffect(() => {
+    if (user?.role !== 'KARYAWAN') return;
+    api.get<{ allowed: boolean }>('/parking-status/access').then((r) => setVehicleReporter(r.allowed)).catch(() => undefined);
+  }, [user?.id, user?.role]);
   if (!user) return null;
 
   // Menu operasional parkir muncul hanya bila modulnya aktif (Super Admin selalu, untuk menyiapkan)
   const parkingOn = !!parking && (parking.karcisEnabled || parking.kejadianEnabled);
+  const employeeGroups: NavGroup[] = vehicleReporter
+    ? [...NAV_GROUPS.KARYAWAN, { title: 'Tugas tambahan', items: [{ to: '/app/laporan-kendaraan', label: 'Laporan Kendaraan', icon: 'car', short: 'Laporan' }] }]
+    : NAV_GROUPS.KARYAWAN;
   const groups: NavGroup[] =
     user.role === 'KARYAWAN'
       ? parkingOn
-        ? [...NAV_GROUPS.KARYAWAN, { title: 'Operasional', items: [{ to: '/app/operasional', label: 'Operasional Parkir', icon: 'car', short: 'Parkir' }] }]
-        : NAV_GROUPS.KARYAWAN
+        ? [...employeeGroups, { title: 'Operasional', items: [{ to: '/app/operasional', label: 'Operasional Parkir', icon: 'car', short: 'Parkir' }] }]
+        : employeeGroups
       : parkingOn || user.role === 'SUPER_ADMIN'
         ? [...NAV_GROUPS[user.role], { title: 'Operasional Parkir', items: [{ to: '/app/parkir', label: 'Karcis & Kejadian', icon: 'car' }] }]
         : NAV_GROUPS[user.role];
