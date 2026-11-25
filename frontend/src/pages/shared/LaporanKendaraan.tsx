@@ -93,7 +93,7 @@ export default function LaporanKendaraan() {
   const live = (parked: number | null, capN: number) =>
     parked === null ? null : (
       <span className={cx('text-xs', pct(parked, capN) >= 85 ? 'text-rose-700' : pct(parked, capN) >= 50 ? 'text-amber-700' : 'text-emerald-700')}>
-        Lot kosong {Math.max(0, capN - parked)} · terisi {pct(parked, capN)}%
+        {parked > capN ? `Melebihi kapasitas ${parked - capN} unit · terisi ${pct(parked, capN)}%` : `Lot kosong ${capN - parked} · terisi ${pct(parked, capN)}%`}
       </span>
     );
 

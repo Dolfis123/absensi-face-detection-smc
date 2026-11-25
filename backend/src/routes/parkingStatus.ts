@@ -64,6 +64,7 @@ const pct = (n: number, cap: number) => (cap ? Math.round((n / cap) * 100) : 0);
 const num = (n: number) => n.toLocaleString('id-ID');
 const signed = (n: number) => (n > 0 ? `+${num(n)}` : n < 0 ? `−${num(-n)}` : '0');
 function status(p: number) {
+  if (p > 100) return '🔴 MELEBIHI KAPASITAS';
   if (p >= 100) return '🔴 PENUH';
   if (p >= 85) return '🔴 Hampir penuh';
   if (p >= 50) return '🟡 Ramai';
@@ -84,7 +85,8 @@ async function reportText(r: R, prev: R | null, order: number, reporter: string,
     const lines = [
       `${icon} *${label}*`,
       `• Terisi: *${num(parked)}* dari ${num(cap)} lot (${pct(parked, cap)}%)`,
-      `• Lot kosong: *${num(Math.max(0, cap - parked))}* lot`,
+      // Terisi boleh melebihi kapasitas (mis. parkir di bahu jalan / area tambahan)
+      parked > cap ? `• Lot kosong: *0* lot · *kelebihan ${num(parked - cap)} unit*` : `• Lot kosong: *${num(cap - parked)}* lot`,
       `• Keluar hari ini: ${num(out)} unit`,
       `• Masuk hari ini: ${num(parked + out)} unit`,
     ];
@@ -175,8 +177,6 @@ router.post(
       .parse(req.body);
     const now = witNow();
     const s = await getSettings();
-    if (body.carParked > s.capacityCar) throw new HttpError(400, `Mobil terisi (${body.carParked}) melebihi kapasitas ${s.capacityCar} lot`);
-    if (body.motorParked > s.capacityMotor) throw new HttpError(400, `Motor terisi (${body.motorParked}) melebihi kapasitas ${s.capacityMotor} lot`);
     const r = await ParkingStatusReport.create({
       date: now.date,
       time: body.time ?? now.time.slice(0, 5),
