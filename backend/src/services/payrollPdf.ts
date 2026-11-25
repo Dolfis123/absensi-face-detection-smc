@@ -68,6 +68,13 @@ export function sendPayrollPdf(res: Response, rows: PayRow[], m: PayrollMeta, fi
   doc.end();
 }
 
+/** Keterangan dasar upah per hari (slip lama tanpa dailyBasis = pembagi tetap). */
+function basisText(s: PayrollMeta['settings']) {
+  return (s.dailyBasis ?? 'TETAP') === 'JADWAL'
+    ? 'Upah per hari = Upah Pokok ÷ hari kerja terjadwal bulan ini (no work no pay, PKWT Pasal 8)'
+    : `Upah per hari = Upah Pokok ÷ ${s.divisor} (no work no pay, PKWT Pasal 8)`;
+}
+
 function rekapPage(doc: PDFKit.PDFDocument, rows: PayRow[], m: PayrollMeta) {
   doc.addPage({ size: 'A4', layout: 'landscape', margin: 36 });
   doc.outline.addItem(`Rekap upah ${m.monthLabel}`);
@@ -77,7 +84,7 @@ function rekapPage(doc: PDFKit.PDFDocument, rows: PayRow[], m: PayrollMeta) {
   kop(doc, m, x, w, 30);
   doc.font('Helvetica-Bold').fontSize(13).fillColor(BRAND).text('REKAP UPAH BERDASARKAN KEHADIRAN', x, doc.y, { width: w, align: 'center' });
   doc.font('Helvetica').fontSize(9).fillColor(MUTED).text(
-    `Periode ${m.monthLabel}${m.until ? ` · periode berjalan, data s.d. ${fmtLongDate(m.until)}` : ''} · Upah per hari = Upah Pokok ÷ ${m.settings.divisor} (PKWT Pasal 8)`,
+    `Periode ${m.monthLabel}${m.until ? ` · periode berjalan, data s.d. ${fmtLongDate(m.until)}` : ''} · ${basisText(m.settings)}`,
     x,
     doc.y + 1,
     { width: w, align: 'center' },
@@ -210,7 +217,7 @@ function slipPage(doc: PDFKit.PDFDocument, r: PayRow, m: PayrollMeta, linked: bo
     ['NIK', r.user.nik],
     ['Jabatan', position(r.user.role, m.kop) || '-'],
     ['Upah pokok', `${rupiah(r.baseWage)} per bulan`],
-    ['Upah per hari', `${rupiah(r.dailyWage)} (Upah Pokok ÷ ${m.settings.divisor})`],
+    ['Upah per hari', `${rupiah(r.dailyWage)} (Upah Pokok ÷ ${r.divisor ?? m.settings.divisor}${(m.settings.dailyBasis ?? 'TETAP') === 'JADWAL' ? ' hari kerja terjadwal' : ''})`],
   ];
   for (const [k, v] of ident) {
     doc.font('Helvetica').fontSize(9.5).fillColor(MUTED).text(k, x, y, { width: 90 });

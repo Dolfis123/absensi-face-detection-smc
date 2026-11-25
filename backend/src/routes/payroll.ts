@@ -1,7 +1,8 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { currentUser, requireRole } from '../middleware/auth';
-import { ATTENDEE_ROLES, EmployeeWage, PayrollPublication, User } from '../models';
+import { Op } from 'sequelize';
+import { ATTENDEE_ROLES, EmployeeSchedule, EmployeeWage, Holiday, PayrollPublication, User } from '../models';
 import { getDisciplineSettings } from '../services/discipline';
 import { computePayroll, getPayrollSettings, PayrollSettings, savePayrollSettings } from '../services/payroll';
 import { PayrollMeta, sendCertificatePdf, sendPayrollPdf } from '../services/payrollPdf';
@@ -28,9 +29,17 @@ async function monthData(month: string) {
   const [s, wages, recap, shifts, kop] = await Promise.all([getPayrollSettings(), EmployeeWage.findAll(), buildRecap(from, until), loadShifts(), getDisciplineSettings()]);
   const active = new Set((await User.findAll({ where: { isActive: true }, attributes: ['id'] })).map((u) => u.id));
   const wageOf = new Map(wages.map((w) => [w.userId, w.baseWage]));
+  // Hari kerja terjadwal sebulan penuh (roster, tanpa Off & hari libur) — dasar upah per hari
+  const [sched, holidays] = await Promise.all([
+    EmployeeSchedule.findAll({ where: { date: { [Op.between]: [from, to] }, shiftId: { [Op.ne]: null } }, attributes: ['userId', 'date'] }),
+    Holiday.findAll({ where: { date: { [Op.between]: [from, to] } }, attributes: ['date'] }),
+  ]);
+  const holiday = new Set(holidays.map((h) => h.date));
+  const scheduled = new Map<number, number>();
+  for (const x of sched) if (!holiday.has(x.date)) scheduled.set(x.userId, (scheduled.get(x.userId) ?? 0) + 1);
   const inputs = recap
     .filter((r) => active.has(r.user.id) || r.summary.hariKerja > 0)
-    .map((r) => ({ user: { id: r.user.id, fullName: r.user.fullName, nik: r.user.nik, role: r.user.role }, baseWage: wageOf.get(r.user.id) ?? defaultWage(r.user.role, s), summary: r.summary, days: r.days }));
+    .map((r) => ({ user: { id: r.user.id, fullName: r.user.fullName, nik: r.user.nik, role: r.user.role }, baseWage: wageOf.get(r.user.id) ?? defaultWage(r.user.role, s), summary: r.summary, days: r.days, scheduledDays: scheduled.get(r.user.id) ?? 0 }));
   const rows = computePayroll(inputs, s, new Map([...shifts.values()].map((sh) => [sh.id, sh.startTime])));
   const meta = (printedBy: string): PayrollMeta => ({ monthLabel: fmtMonth(month), until: to > today ? today : null, settings: s, kop, printedBy, printedAt: today });
   return { rows, settings: s, meta, until, partial: to > today };
@@ -171,6 +180,7 @@ router.put(
     const money = z.number().int().min(0).max(100_000_000);
     const body: PayrollSettings = z
       .object({
+        dailyBasis: z.enum(['JADWAL', 'TETAP']),
         divisor: z.number().int().min(1).max(31),
         defaultWageKaryawan: money,
         defaultWageKoordinator: money,

@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react';
 import { useLoad } from '../../components/attendance';
 import { useFeedback } from '../../components/feedback';
-import { Alert, Badge, Button, Card, Empty, Field, Input, Loading, PageHeader, PersonCell, StatCard, Table, Td, Th } from '../../components/ui';
+import { Alert, Badge, Button, Card, Empty, Field, Input, Loading, PageHeader, PersonCell, Select, StatCard, Table, Td, Th } from '../../components/ui';
 import { api, downloadFile, errMsg, Role } from '../../lib/api';
 import { addDays, fmtDate, todayWIT } from '../../lib/format';
 import { Tabs } from '../parkir/shared';
 
 interface Settings {
+  dailyBasis: 'JADWAL' | 'TETAP';
   divisor: number;
   defaultWageKaryawan: number;
   defaultWageKoordinator: number;
@@ -18,6 +19,7 @@ interface PayRow {
   user: { id: number; fullName: string; nik: string; role: Role };
   baseWage: number;
   dailyWage: number;
+  divisor: number;
   workDays: number;
   present: number;
   onTime: number;
@@ -226,7 +228,7 @@ function Rekap() {
                       </Td>
                       <Td className="whitespace-nowrap text-right">
                         {rp(r.baseWage)}
-                        <div className="text-xs text-slate-500">{rp(r.dailyWage)}/hari</div>
+                        <div className="text-xs text-slate-500" title={`Upah pokok ÷ ${r.divisor}`}>{rp(r.dailyWage)}/hari · ÷{r.divisor}</div>
                       </Td>
                       <Td className="text-center">
                         {r.present}/{r.workDays}
@@ -386,16 +388,29 @@ function Pengaturan() {
     }
   }
 
-  const daily = Math.round(f.defaultWageKaryawan / (f.divisor || 1));
+  // Contoh hitungan: pembagi tetap, atau 26 hari kerja terjadwal (pola 1 Off per minggu)
+  const exampleDays = f.dailyBasis === 'JADWAL' ? 26 : f.divisor || 1;
+  const daily = Math.round(f.defaultWageKaryawan / exampleDays);
   return (
     <div className="grid gap-4 lg:grid-cols-2">
-      <Card title="Upah dasar" subtitle="PKWT Pasal 8: upah per hari = upah pokok ÷ 25">
+      <Card title="Upah dasar" subtitle="PKWT Pasal 8: no work no pay — upah hari mangkir tidak dibayar">
         <div className="space-y-3">
           {money('Upah bawaan Petugas Parkir', f.defaultWageKaryawan, (n) => setF({ ...f, defaultWageKaryawan: n }))}
           {money('Upah bawaan Koordinator', f.defaultWageKoordinator, (n) => setF({ ...f, defaultWageKoordinator: n }))}
-          <Field label="Pembagi upah per hari" hint={`Upah per hari Petugas = ${rp(daily)}`}>
-            <Input type="number" min={1} max={31} value={f.divisor} onChange={(e) => setF({ ...f, divisor: num(e.target.value) || 1 })} />
+          <Field
+            label="Dasar upah per hari"
+            hint={f.dailyBasis === 'JADWAL' ? `Dihitung per karyawan dari roster. Contoh 26 hari kerja: ${rp(daily)}/hari` : `Upah per hari Petugas = ${rp(daily)}`}
+          >
+            <Select value={f.dailyBasis} onChange={(e) => setF({ ...f, dailyBasis: e.target.value as Settings['dailyBasis'] })}>
+              <option value="JADWAL">Upah pokok ÷ hari kerja terjadwal bulan itu</option>
+              <option value="TETAP">Upah pokok ÷ angka tetap</option>
+            </Select>
           </Field>
+          {f.dailyBasis === 'TETAP' && (
+            <Field label="Angka pembagi tetap">
+              <Input type="number" min={1} max={31} value={f.divisor} onChange={(e) => setF({ ...f, divisor: num(e.target.value) || 1 })} />
+            </Field>
+          )}
           <p className="text-xs text-slate-500">Mangkir (Alfa) selalu dipotong 1× upah per hari untuk setiap hari mangkir (no work no pay).</p>
         </div>
       </Card>

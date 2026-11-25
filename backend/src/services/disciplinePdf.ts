@@ -111,7 +111,7 @@ export function sendDisciplinePdf(res: Response, L: LetterData, s: DisciplineSet
     numbered(doc, M, W, [
       'Hadir dan melakukan absensi online sesuai roster serta jendela absen yang berlaku.',
       'Mengajukan izin, sakit, atau cuti melalui aplikasi sebelum tidak masuk bekerja, disertai bukti pendukung yang sah.',
-      'Memahami bahwa sesuai prinsip no work no pay (PKWT Pasal 8), upah untuk hari mangkir tidak dibayarkan dan dihitung proporsional: Upah Pokok ÷ 25 × jumlah hari mangkir.',
+      'Memahami bahwa sesuai asas no work no pay (PKWT Pasal 8 jo. Pasal 93 UU No. 13 Tahun 2003 sebagaimana diubah UU No. 6 Tahun 2023), upah untuk hari mangkir tidak dibayarkan.',
       L.type === 'PERINGATAN_1'
         ? 'Memperhatikan bahwa apabila mangkir mencapai 5 (lima) kali dalam satu bulan, Perusahaan akan memberikan Surat Peringatan Kedua secara tertulis.'
         : L.type === 'PERINGATAN_2'
